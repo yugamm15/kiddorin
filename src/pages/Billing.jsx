@@ -10,6 +10,7 @@ const Billing = () => {
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [error, setError] = useState('');
   const [billGenerated, setBillGenerated] = useState(null);
+  const [finalPrice, setFinalPrice] = useState('');
   const barcodeInputRef = useRef(null);
 
   useEffect(() => {
@@ -72,7 +73,9 @@ const Billing = () => {
     setItems(items.filter(i => i.product_id !== id));
   };
 
-  const total = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  const subtotal = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  const finalAmount = finalPrice && !isNaN(finalPrice) ? parseFloat(finalPrice) : subtotal;
+  const discountAmount = subtotal - finalAmount;
 
   const confirmBill = async () => {
     if (items.length === 0) {
@@ -85,7 +88,7 @@ const Billing = () => {
       const dbItems = items.map(i => ({ product_id: i.product_id, quantity: i.qty, price: i.price }));
       const newBill = await db.generateBill({
         branch_id: user.branch_id,
-        total_amount: total,
+        total_amount: finalAmount,
         payment_method: paymentMethod === 'cash' ? 'Cash' : 'UPI'
       }, dbItems);
       
@@ -94,10 +97,13 @@ const Billing = () => {
         id: newBill.id,
         date: new Date().toLocaleString('en-IN'),
         items: items,
-        total: total,
+        subtotal: subtotal,
+        discount: discountAmount,
+        total: finalAmount,
         payment: paymentMethod
       });
       setItems([]);
+      setFinalPrice('');
     } catch (err) {
       setError(err.message);
     }
@@ -105,6 +111,7 @@ const Billing = () => {
 
   const clearBill = () => {
     setItems([]);
+    setFinalPrice('');
     setBillGenerated(null);
     setError('');
     if (barcodeInputRef.current) barcodeInputRef.current.focus();
@@ -180,9 +187,30 @@ const Billing = () => {
                 </tbody>
               </table>
             </div>
-            <div className="total-row">
-              <span className="label">TOTAL AMOUNT</span>
-              <span className="value">₹{total.toLocaleString('en-IN')}</span>
+            <div className="total-row" style={{ paddingBottom: '16px', borderBottom: items.length > 0 ? '1px solid var(--border)' : 'none' }}>
+              <span className="label">SUBTOTAL</span>
+              <span className="value" style={{ fontSize: '24px' }}>₹{subtotal.toLocaleString('en-IN')}</span>
+            </div>
+            
+            {items.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+                <span className="label" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>FINAL PRICE (Optional)</span>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>₹</span>
+                  <input 
+                    type="number" 
+                    value={finalPrice} 
+                    onChange={e => setFinalPrice(e.target.value)} 
+                    style={{ padding: '10px 12px 10px 24px', width: '140px', borderRadius: '4px', border: '1px solid var(--border)', textAlign: 'right', fontWeight: 'bold', fontSize: '16px', fontFamily: '"Playfair Display", serif' }}
+                    placeholder={subtotal}
+                  />
+                </div>
+              </div>
+            )}
+            
+            <div className="total-row" style={{ borderTop: 'none', paddingTop: '16px' }}>
+              <span className="label" style={{ color: 'var(--dark)' }}>TOTAL AMOUNT</span>
+              <span className="value">₹{finalAmount.toLocaleString('en-IN')}</span>
             </div>
           </div>
         </div>
@@ -217,6 +245,9 @@ const Billing = () => {
                 <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>Bill ID: <strong>{billGenerated.id.toUpperCase()}</strong> • {billGenerated.date}</div>
                 <div style={{ fontSize: '13px', marginBottom: '4px' }}>Branch: {user?.branch?.name}</div>
                 <div style={{ fontSize: '13px', marginBottom: '12px' }}>Items: {billGenerated.items.length} | Payment: <span className={`badge ${billGenerated.payment === 'cash' ? 'badge-green' : 'badge-blue'}`}>{billGenerated.payment.toUpperCase()}</span></div>
+                {billGenerated.discount > 0 && (
+                  <div style={{ fontSize: '13px', color: 'var(--success)', marginBottom: '4px' }}>Discount Applied: ₹{billGenerated.discount.toLocaleString('en-IN')}</div>
+                )}
                 <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--dark)' }}>Total: ₹{billGenerated.total.toLocaleString('en-IN')}</div>
               </div>
               <button className="btn btn-primary" style={{ width: '100%', marginTop: '12px' }} onClick={printBill}>🖨️ Print Bill</button>
@@ -263,9 +294,23 @@ const Billing = () => {
               ))}
             </tbody>
           </table>
-          <div className="pb-total">
-            <span>Total Amount:</span>
-            <span>₹{billGenerated.total.toLocaleString('en-IN')}</span>
+          <div className="pb-total" style={{ flexDirection: 'column', gap: '4px' }}>
+            {billGenerated.discount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: '#555' }}>
+                <span>Subtotal:</span>
+                <span>₹{billGenerated.subtotal.toLocaleString('en-IN')}</span>
+              </div>
+            )}
+            {billGenerated.discount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '8px', color: '#555' }}>
+                <span>Discount:</span>
+                <span>-₹{billGenerated.discount.toLocaleString('en-IN')}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+              <span>Total Amount:</span>
+              <span>₹{billGenerated.total.toLocaleString('en-IN')}</span>
+            </div>
           </div>
           <div className="pb-footer">
             <div>Thank you for shopping with us!</div>
