@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 
 const Dealers = () => {
   const [dealers, setDealers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -12,8 +13,10 @@ const Dealers = () => {
   });
 
   const loadDealers = async () => {
+    setLoading(true);
     const data = await db.getDealers();
-    setDealers(data);
+    setDealers(data || []);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -71,18 +74,26 @@ const Dealers = () => {
       )}
       
       <div className="branch-grid">
-        {dealers.map(d => (
-          <div key={d.id} className="branch-card">
-            <div className="branch-name">🏢 {d.name}</div>
-            <div className="branch-detail">📍 {d.address || '-'}<br/>📞 {d.phone || '-'}</div>
-            <div className="branch-stats" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-              <div className="b-stat"><div className="v">{d.total_items}</div><div className="l">Total Items Bought</div></div>
-              <div className="b-stat"><div className="v">₹{d.total_spent.toLocaleString('en-IN')}</div><div className="l">Total Spent</div></div>
-            </div>
-          </div>
-        ))}
-        {dealers.length === 0 && !showForm && (
-          <div style={{ color: '#aaa', padding: '24px' }}>No dealers found.</div>
+        {loading ? (
+          [...Array(3)].map((_, i) => (
+            <div key={`skel-${i}`} className="branch-card skeleton" style={{ height: '180px', border: 'none' }}></div>
+          ))
+        ) : (
+          <>
+            {dealers.map(d => (
+              <div key={d.id} className="branch-card">
+                <div className="branch-name">🏢 {d.name}</div>
+                <div className="branch-detail">📍 {d.address || '-'}<br/>📞 {d.phone || '-'}</div>
+                <div className="branch-stats" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+                  <div className="b-stat"><div className="v">{d.total_items}</div><div className="l">Total Items Bought</div></div>
+                  <div className="b-stat"><div className="v">₹{d.total_spent.toLocaleString('en-IN')}</div><div className="l">Total Spent</div></div>
+                </div>
+              </div>
+            ))}
+            {dealers.length === 0 && !showForm && (
+              <div style={{ color: '#aaa', padding: '24px' }}>No dealers found.</div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -5,13 +5,17 @@ import { db } from '../services/db';
 const Inventory = () => {
   const { user } = useAuth();
   const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchName, setSearchName] = useState('');
   const [searchColor, setSearchColor] = useState('');
   const [searchSize, setSearchSize] = useState('');
 
   useEffect(() => {
     if (user?.branch_id) {
-      db.getProducts(user.branch_id).then(setProducts);
+      db.getProducts(user.branch_id).then(data => {
+        setProducts(data || []);
+        setLoading(false);
+      });
     }
   }, [user]);
 
@@ -82,28 +86,37 @@ const Inventory = () => {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(s => (
-              <tr key={s.id}>
-                <td><strong>{s.design_number}</strong></td>
-                <td>{s.category}</td>
-                <td>{s.gender}</td>
-                <td>{s.color}</td>
-                <td>{s.size}</td>
-                <td>
-                  <strong>{s.quantity}</strong> {s.quantity < 5 && <span className="low-stock-badge">LOW</span>}
-                </td>
-                <td>₹{s.purchase_price}</td>
-                <td>₹{s.selling_price}</td>
-                <td>{user?.branch?.name}</td>
-                <td>
-                  <span className={`badge ${s.quantity > 0 ? 'badge-green' : 'badge-red'}`}>
-                    {s.quantity > 0 ? 'In Stock' : 'Out'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
+            {loading ? (
+              [...Array(5)].map((_, i) => (
+                <tr key={`skel-${i}`}>
+                  <td colSpan="10" style={{ padding: '8px 16px' }}>
+                    <div className="skeleton skeleton-table-row" style={{ marginBottom: 0 }}></div>
+                  </td>
+                </tr>
+              ))
+            ) : filtered.length === 0 ? (
               <tr><td colSpan="10" style={{ textAlign: 'center', color: '#aaa', padding: '24px' }}>No products found</td></tr>
+            ) : (
+              filtered.map(s => (
+                <tr key={s.id}>
+                  <td><strong>{s.design_number}</strong></td>
+                  <td>{s.category}</td>
+                  <td>{s.gender}</td>
+                  <td>{s.color}</td>
+                  <td>{s.size}</td>
+                  <td>
+                    <strong>{s.quantity}</strong> {s.quantity < 5 && <span className="low-stock-badge">LOW</span>}
+                  </td>
+                  <td>₹{s.purchase_price}</td>
+                  <td>₹{s.selling_price}</td>
+                  <td>{user?.branch?.name}</td>
+                  <td>
+                    <span className={`badge ${s.quantity > 0 ? 'badge-green' : 'badge-red'}`}>
+                      {s.quantity > 0 ? 'In Stock' : 'Out'}
+                    </span>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

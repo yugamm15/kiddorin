@@ -12,7 +12,25 @@ const Dashboard = () => {
     }
   }, [user]);
 
-  if (!stats) return null;
+  if (!stats) return (
+    <div className="page active" id="dashboard-page">
+      <div className="skeleton skeleton-title" style={{ width: '200px' }}></div>
+      <div className="skeleton skeleton-text" style={{ width: '150px' }}></div>
+      
+      <div className="stat-grid" style={{ marginTop: '24px' }}>
+        {[...Array(6)].map((_, i) => (
+          <div className="stat-card skeleton skeleton-card" key={i}></div>
+        ))}
+      </div>
+      
+      <div className="skeleton skeleton-title" style={{ width: '250px', marginTop: '32px' }}></div>
+      <div className="table-wrap">
+        {[...Array(5)].map((_, i) => (
+          <div className="skeleton skeleton-table-row" key={i} style={{ borderBottom: '1px solid var(--border)' }}></div>
+        ))}
+      </div>
+    </div>
+  );
 
   const todayStr = new Date().toLocaleDateString('en-IN', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
 
