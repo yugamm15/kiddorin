@@ -1,17 +1,25 @@
 import { supabase } from './supabaseClient';
 
 class SupabaseDB {
-  async login(username, password) {
-    // In a real app, use Supabase Auth. For now, matching the users table:
-    const { data, error } = await supabase
+  async login(email, password) {
+    // 1. Authenticate with Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password,
+    });
+
+    if (authError) throw new Error("Invalid email or password");
+
+    // 2. Fetch user profile and branch details
+    const { data: profile, error: profileError } = await supabase
       .from('users')
       .select('*, branches(*)')
-      .eq('username', username)
-      .eq('password', password)
+      .eq('id', authData.user.id)
       .single();
 
-    if (error || !data) throw new Error("Invalid username or password");
-    return { ...data, branch: data.branches };
+    if (profileError || !profile) throw new Error("User profile not found in database.");
+
+    return { ...profile, branch: profile.branches };
   }
 
   async addDealer(dealerData) {

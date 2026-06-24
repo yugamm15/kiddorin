@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
+import toast from 'react-hot-toast';
 
 const Inventory = () => {
   const { user } = useAuth();
@@ -10,6 +11,16 @@ const Inventory = () => {
   const [searchColor, setSearchColor] = useState('');
   const [searchSize, setSearchSize] = useState('');
 
+  const [dealers, setDealers] = useState([]);
+  const [restockProduct, setRestockProduct] = useState(null);
+  const [restockQty, setRestockQty] = useState('');
+  const [restockPrice, setRestockPrice] = useState('');
+  const [restockDealer, setRestockDealer] = useState('');
+
+  useEffect(() => {
+    db.getDealers().then(setDealers);
+  }, []);
+
   useEffect(() => {
     if (user?.branch_id) {
       db.getProducts(user.branch_id).then(data => {
@@ -18,6 +29,42 @@ const Inventory = () => {
       });
     }
   }, [user]);
+
+  const openRestock = (product) => {
+    setRestockProduct(product);
+    setRestockPrice(product.purchase_price);
+    setRestockQty('');
+    setRestockDealer('');
+  };
+
+  const handleRestock = async () => {
+    if (!restockQty || parseInt(restockQty) <= 0) {
+      toast.error('Enter valid quantity');
+      return;
+    }
+    try {
+      await db.addStock({
+        category: restockProduct.category,
+        gender: restockProduct.gender,
+        design_number: restockProduct.design_number,
+        color: restockProduct.color,
+        size: restockProduct.size,
+        quantity: restockQty,
+        purchase_price: restockPrice,
+        selling_price: restockProduct.selling_price,
+        dealer_id: restockDealer,
+        branch_id: user.branch_id,
+        date: new Date().toISOString().split('T')[0]
+      });
+      toast.success(`Successfully added ${restockQty} to stock!`);
+      setRestockProduct(null);
+      // Refresh products list
+      const data = await db.getProducts(user.branch_id);
+      setProducts(data || []);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
 
   const filtered = products.filter(s => {
     const matchName = (s.design_number + " " + s.category).toLowerCase().includes(searchName.toLowerCase());
@@ -83,19 +130,20 @@ const Inventory = () => {
               <th>Sell Price</th>
               <th>Branch</th>
               <th>Status</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               [...Array(5)].map((_, i) => (
                 <tr key={`skel-${i}`}>
-                  <td colSpan="10" style={{ padding: '8px 16px' }}>
+                  <td colSpan="11" style={{ padding: '8px 16px' }}>
                     <div className="skeleton skeleton-table-row" style={{ marginBottom: 0 }}></div>
                   </td>
                 </tr>
               ))
             ) : filtered.length === 0 ? (
-              <tr><td colSpan="10" style={{ textAlign: 'center', color: '#aaa', padding: '24px' }}>No products found</td></tr>
+              <tr><td colSpan="11" style={{ textAlign: 'center', color: '#aaa', padding: '24px' }}>No products found</td></tr>
             ) : (
               filtered.map(s => (
                 <tr key={s.id}>
@@ -115,12 +163,56 @@ const Inventory = () => {
                       {s.quantity > 0 ? 'In Stock' : 'Out'}
                     </span>
                   </td>
+                  <td>
+                    <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '10px' }} onClick={() => openRestock(s)}>
+                      ➕ RESTOCK
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Restock Modal */}
+      {restockProduct && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div className="card" style={{ width: '400px', margin: 0 }}>
+            <div className="section-title">Restock Inventory</div>
+            <p style={{ marginBottom: '16px', color: 'var(--text-muted)' }}>
+              Restocking: <strong style={{ color: 'var(--dark)' }}>{restockProduct.design_number}</strong> | {restockProduct.color} | {restockProduct.size}
+            </p>
+            
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label>Add Quantity</label>
+              <input type="number" min="1" value={restockQty} onChange={e => setRestockQty(e.target.value)} placeholder="e.g. 10" />
+            </div>
+            
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label>New Purchase Price (₹)</label>
+              <input type="number" min="0" value={restockPrice} onChange={e => setRestockPrice(e.target.value)} />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '24px' }}>
+              <label>Dealer (Optional)</label>
+              <select value={restockDealer} onChange={e => setRestockDealer(e.target.value)}>
+                <option value="">Select Dealer...</option>
+                {dealers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleRestock}>Confirm Restock</button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setRestockProduct(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

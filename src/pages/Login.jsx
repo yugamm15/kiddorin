@@ -3,7 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
   const { login, user } = useAuth();
@@ -13,7 +13,7 @@ const Login = () => {
 
   const handleSubmit = async () => {
     setError(false);
-    const res = await login(username, password);
+    const res = await login(email, password);
     if (res.success) {
       navigate('/');
     } else {
@@ -31,10 +31,10 @@ const Login = () => {
         <div className="login-logo">Kiddor<span>in</span></div>
         <div className="login-tag">The World in Their Wardrobe</div>
         <input 
-          type="text" 
-          placeholder="Username" 
-          value={username}
-          onChange={e => setUsername(e.target.value)}
+          type="email" 
+          placeholder="Email Address" 
+          value={email}
+          onChange={e => setEmail(e.target.value)}
         />
         <input 
           type="password" 
@@ -45,10 +45,7 @@ const Login = () => {
         />
         <button className="btn-gold" onClick={handleSubmit}>Sign In</button>
         <div className="login-err" style={{ display: error ? 'block' : 'none' }}>
-          Invalid username or password.
-        </div>
-        <div style={{ marginTop: '16px', fontSize: '12px', color: '#aaa' }}>
-          Demo: admin / password
+          Invalid email or password.
         </div>
       </div>
     </div>
