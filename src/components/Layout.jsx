@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const Layout = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -35,9 +36,18 @@ const Layout = () => {
       </div>
       
       <header className="luxury-header">
-        <nav className="nav-left">
+        <button 
+          className="hamburger" 
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        >
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d={isMobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
+          </svg>
+        </button>
+
+        <nav className={`nav-left ${isMobileMenuOpen ? 'open' : ''}`}>
           {leftNav.map((item) => (
-            <NavLink key={item.path} to={item.path} className={({ isActive }) => `header-link ${isActive ? 'active' : ''}`}>
+            <NavLink key={item.path} to={item.path} className={({ isActive }) => `header-link ${isActive ? 'active' : ''}`} onClick={() => setIsMobileMenuOpen(false)}>
               {item.name}
             </NavLink>
           ))}
@@ -48,9 +58,9 @@ const Layout = () => {
           <div className="brand-tag">The World in Their Wardrobe</div>
         </div>
 
-        <nav className="nav-right">
+        <nav className={`nav-right ${isMobileMenuOpen ? 'open' : ''}`}>
           {rightNav.map((item) => (
-            <NavLink key={item.path} to={item.path} className={({ isActive }) => `header-link ${isActive ? 'active' : ''}`}>
+            <NavLink key={item.path} to={item.path} className={({ isActive }) => `header-link ${isActive ? 'active' : ''}`} onClick={() => setIsMobileMenuOpen(false)}>
               {item.name}
             </NavLink>
           ))}

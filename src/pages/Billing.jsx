@@ -224,6 +224,55 @@ const Billing = () => {
           )}
         </div>
       </div>
+
+      {/* Hidden Print Bill Component */}
+      {billGenerated && (
+        <div id="print-bill" className="print-bill-container">
+          <div className="pb-header">
+            <div className="pb-store-name">Kiddorin</div>
+            <div className="pb-tagline">The World in Their Wardrobe</div>
+            <div className="pb-branch">{user?.branch?.name || 'Main Store'}</div>
+          </div>
+          <div className="pb-details">
+            <div><strong>Date:</strong> {billGenerated.date}</div>
+            {billGenerated.payment === 'cash' && (
+              <div><strong>Bill No:</strong> {billGenerated.id.toUpperCase()}</div>
+            )}
+            {billGenerated.payment !== 'cash' && (
+              <div><strong>Bill No:</strong> {billGenerated.id.toUpperCase()}</div>
+            )}
+            <div><strong>Payment:</strong> {billGenerated.payment.toUpperCase()}</div>
+          </div>
+          <table className="pb-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {billGenerated.items.map((item, idx) => (
+                <tr key={idx}>
+                  <td>{item.name} {item.size ? `| ${item.size}` : ''} {item.color ? `| ${item.color}` : ''}</td>
+                  <td>{item.qty}</td>
+                  <td>{item.price}</td>
+                  <td>{item.price * item.qty}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="pb-total">
+            <span>Total Amount:</span>
+            <span>₹{billGenerated.total.toLocaleString('en-IN')}</span>
+          </div>
+          <div className="pb-footer">
+            <div>Thank you for shopping with us!</div>
+            <div>No Return | No Exchange</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
