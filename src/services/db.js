@@ -223,6 +223,34 @@ class SupabaseDB {
       recentTransactions: recentTransactions || []
     };
   }
+
+  async getBranchesWithStats() {
+    const { data: branches, error: bErr } = await supabase.from('branches').select('*');
+    if (bErr) throw bErr;
+
+    const branchesWithStats = await Promise.all(branches.map(async (branch) => {
+      const { data: prods } = await supabase.from('products').select('quantity').eq('branch_id', branch.id);
+      const stockItems = prods ? prods.reduce((sum, p) => sum + p.quantity, 0) : 0;
+      
+      const { data: bills } = await supabase.from('bills').select('total_amount').eq('branch_id', branch.id);
+      const totalBills = bills ? bills.length : 0;
+      const totalRevenue = bills ? bills.reduce((sum, b) => sum + Number(b.total_amount), 0) : 0;
+
+      // Find an admin user for this branch
+      const { data: admins } = await supabase.from('users').select('email').eq('branch_id', branch.id).limit(1);
+      const adminEmail = admins && admins.length > 0 ? admins[0].email : 'Admin';
+
+      return {
+        ...branch,
+        admin: adminEmail,
+        stockItems,
+        totalBills,
+        totalRevenue
+      };
+    }));
+
+    return branchesWithStats;
+  }
 }
 
 export const db = new SupabaseDB();
