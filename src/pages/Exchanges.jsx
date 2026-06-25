@@ -25,6 +25,8 @@ const Exchanges = () => {
 
   // Receipt modal
   const [completedExchange, setCompletedExchange] = useState(null);
+  const [branchReturns, setBranchReturns] = useState([]);
+  const [viewingReturnHistory, setViewingReturnHistory] = useState(null);
 
   useEffect(() => {
     if (user?.branch_id) {
@@ -35,8 +37,12 @@ const Exchanges = () => {
   const loadBills = async () => {
     setLoadingBills(true);
     try {
-      const bills = await db.getCustomerBills(user.branch_id);
+      const [bills, rets] = await Promise.all([
+        db.getCustomerBills(user.branch_id),
+        db.getBranchReturns(user.branch_id)
+      ]);
       setCustomerBills(bills || []);
+      setBranchReturns(rets || []);
     } catch (err) {
       toast.error('Failed to load past bills');
     } finally {
@@ -164,32 +170,53 @@ const Exchanges = () => {
                   <th>Customer Details</th>
                   <th>Total Paid</th>
                   <th>Payment</th>
+                  <th>Return Status</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loadingBills ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '24px' }}>Loading customer records...</td></tr>
+                  <tr><td colSpan="7" style={{ textAlign: 'center', padding: '24px' }}>Loading customer records...</td></tr>
                 ) : filteredBills.length === 0 ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: '#aaa' }}>No customer bills found. Create a bill in POS first!</td></tr>
+                  <tr><td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: '#aaa' }}>No customer bills found. Create a bill in POS first!</td></tr>
                 ) : (
-                  filteredBills.map(bill => (
-                    <tr key={bill.id}>
-                      <td style={{ fontFamily: 'monospace', fontWeight: 700 }}>{bill.id.slice(0, 8).toUpperCase()}</td>
-                      <td style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{new Date(bill.created_at).toLocaleDateString('en-IN')}</td>
-                      <td>
-                        <strong>{bill.customer_name || 'Walk-in'}</strong>
-                        {bill.customer_phone && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>📞 {bill.customer_phone}</div>}
-                      </td>
-                      <td style={{ fontWeight: 700 }}>₹{Number(bill.total_amount).toLocaleString('en-IN')}</td>
-                      <td><span className="badge badge-secondary">{bill.payment_method}</span></td>
-                      <td>
-                        <button className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '11px' }} onClick={() => selectBillForReturn(bill)}>
-                          🔄 Return / Exchange
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                  filteredBills.map(bill => {
+                    const billRets = branchReturns.filter(r => r.original_bill_id === bill.id);
+                    return (
+                      <tr key={bill.id}>
+                        <td style={{ fontFamily: 'monospace', fontWeight: 700 }}>{bill.id.slice(0, 8).toUpperCase()}</td>
+                        <td style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{new Date(bill.created_at).toLocaleDateString('en-IN')}</td>
+                        <td>
+                          <strong>{bill.customer_name || 'Walk-in'}</strong>
+                          {bill.customer_phone && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>📞 {bill.customer_phone}</div>}
+                        </td>
+                        <td style={{ fontWeight: 700 }}>₹{Number(bill.total_amount).toLocaleString('en-IN')}</td>
+                        <td><span className="badge badge-secondary">{bill.payment_method}</span></td>
+                        <td>
+                          {billRets.length === 0 ? (
+                            <span style={{ color: '#ccc' }}>—</span>
+                          ) : (
+                            <button 
+                              className="btn btn-secondary" 
+                              style={{ padding: '4px 10px', fontSize: '11px', background: '#fff3cd', color: '#856404', border: '1px solid #ffeeba', fontWeight: 600 }}
+                              onClick={() => setViewingReturnHistory({ bill, returns: billRets })}
+                            >
+                              ⚠️ Returned ({billRets.length})
+                            </button>
+                          )}
+                        </td>
+                        <td>
+                          {billRets.length > 0 ? (
+                            <span style={{ fontSize: '11px', color: '#999', fontStyle: 'italic' }}>🔒 Return Completed</span>
+                          ) : (
+                            <button className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '11px' }} onClick={() => selectBillForReturn(bill)}>
+                              🔄 Return / Exchange
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -412,6 +439,54 @@ const Exchanges = () => {
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { toast.dismiss(); window.print(); }}>🖨️ Print Receipt</button>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setCompletedExchange(null)}>Done</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* RETURN HISTORY MODAL */}
+      {viewingReturnHistory && (
+        <div style={{ position: 'fixed', top:0, left:0, right:0, bottom:0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="card" style={{ width: '520px', maxWidth: '95%', margin: 0, padding: '24px', maxHeight: '85vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '12px', marginBottom: '16px' }}>
+              <div>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--dark)' }}>Return History for Bill #{viewingReturnHistory.bill.id.slice(0,8).toUpperCase()}</div>
+                <div style={{ fontSize: '12px', color: '#666' }}>Customer: {viewingReturnHistory.bill.customer_name || 'Walk-in'}</div>
+              </div>
+              <button className="btn btn-secondary" style={{ padding: '4px 10px' }} onClick={() => setViewingReturnHistory(null)}>✕</button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {viewingReturnHistory.returns.map((ret, idx) => {
+                const bItems = viewingReturnHistory.bill.bill_items || [];
+                const matchItem = bItems.find(bi => bi.product_id === ret.returned_product_id || bi.products?.id === ret.returned_product_id);
+                const prodInfo = matchItem?.products ? `${matchItem.products.category} (${matchItem.products.size} ${matchItem.products.color})` : `ID #${(ret.returned_product_id||'').slice(0,8)}`;
+                
+                return (
+                  <div key={ret.id || idx} style={{ padding: '14px', background: '#faf8f5', border: '1px solid #ddd', borderRadius: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px', color: '#666' }}>
+                      <span>📅 {new Date(ret.created_at).toLocaleString('en-IN')}</span>
+                      <span className="badge badge-secondary">{ret.return_reason}</span>
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#e74c3c' }}>
+                      🔄 Returned: {prodInfo} (Qty: {ret.returned_qty})
+                    </div>
+                    {ret.exchanged_product_id && (
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#27ae60', marginTop: '4px' }}>
+                        🎁 Replacement Issued (ID #{ret.exchanged_product_id.slice(0,8)})
+                      </div>
+                    )}
+                    <div style={{ borderTop: '1px dashed #ccc', marginTop: '10px', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '13px' }}>
+                      <span>Settlement:</span>
+                      <span style={{ color: ret.net_amount < 0 ? '#2980b9' : '#27ae60' }}>
+                        {ret.net_amount < 0 ? `Credit Voucher Issued ₹${Math.abs(ret.net_amount)}` : `Paid Extra ₹${ret.net_amount}`}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button className="btn btn-primary" style={{ width: '100%', marginTop: '20px' }} onClick={() => setViewingReturnHistory(null)}>Close</button>
           </div>
         </div>
       )}

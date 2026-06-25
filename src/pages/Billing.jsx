@@ -14,11 +14,24 @@ const Billing = () => {
   const [discountType, setDiscountType] = useState('amount');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [availableCredit, setAvailableCredit] = useState(0);
   const barcodeInputRef = useRef(null);
 
   useEffect(() => {
     if (barcodeInputRef.current) barcodeInputRef.current.focus();
   }, []);
+
+  useEffect(() => {
+    const fetchCredit = async () => {
+      if (customerPhone && customerPhone.trim().length >= 10 && user?.branch_id) {
+        const bal = await db.getCustomerCredit(customerPhone.trim(), user.branch_id);
+        setAvailableCredit(bal || 0);
+      } else {
+        setAvailableCredit(0);
+      }
+    };
+    fetchCredit();
+  }, [customerPhone, user]);
 
   const handleScan = async () => {
     if (!barcode.trim()) return;
@@ -90,7 +103,9 @@ const Billing = () => {
       discountPercent = parseFloat(((discountAmount / subtotal) * 100).toFixed(2));
     }
   }
-  const finalAmount = Math.max(0, subtotal - discountAmount);
+  const netBeforeCredit = Math.max(0, subtotal - discountAmount);
+  const creditApplied = Math.min(availableCredit, netBeforeCredit);
+  const finalAmount = Math.max(0, netBeforeCredit - creditApplied);
 
   const confirmBill = async () => {
     if (items.length === 0) {
@@ -104,10 +119,14 @@ const Billing = () => {
       const newBill = await db.generateBill({
         branch_id: user.branch_id,
         total_amount: finalAmount,
-        payment_method: paymentMethod === 'cash' ? 'Cash' : 'UPI',
+        payment_method: finalAmount === 0 ? 'Store Credit' : (paymentMethod === 'cash' ? 'Cash' : 'UPI'),
         customer_name: customerName.trim() || 'Walk-in Customer',
         customer_phone: customerPhone.trim() || null
       }, dbItems);
+
+      if (creditApplied > 0) {
+        await db.deductCustomerCredit(customerPhone.trim(), user.branch_id, creditApplied);
+      }
       
       toast.success('Bill generated successfully!');
       setBillGenerated({
@@ -116,14 +135,16 @@ const Billing = () => {
         items: items,
         subtotal: subtotal,
         discount: discountAmount,
+        creditApplied: creditApplied,
         total: finalAmount,
-        payment: paymentMethod,
+        payment: finalAmount === 0 ? 'Store Credit' : paymentMethod,
         customerName: customerName.trim() || 'Walk-in Customer',
         customerPhone: customerPhone.trim()
       });
       setItems([]);
       setDiscountValue('');
       setDiscountType('amount');
+      setAvailableCredit(0);
     } catch (err) {
       setError(err.message);
     }
@@ -135,6 +156,7 @@ const Billing = () => {
     setDiscountType('amount');
     setCustomerName('');
     setCustomerPhone('');
+    setAvailableCredit(0);
     setBillGenerated(null);
     setError('');
     if (barcodeInputRef.current) barcodeInputRef.current.focus();
@@ -170,6 +192,15 @@ const Billing = () => {
                 style={{ flex: '1 1 140px' }}
               />
             </div>
+            {availableCredit > 0 && (
+              <div style={{ marginTop: '12px', background: '#d4edda', color: '#155724', padding: '10px 14px', borderRadius: '6px', border: '1px solid #c3e6cb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <strong style={{ fontSize: '13px' }}>💳 Store Credit Available: ₹{availableCredit}</strong>
+                  <div style={{ fontSize: '11px' }}>Automatically applied to this purchase</div>
+                </div>
+                <span style={{ fontWeight: 800, fontSize: '16px', color: '#27ae60' }}>-₹{creditApplied}</span>
+              </div>
+            )}
           </div>
 
           <div className="card" style={{ marginBottom: '16px' }}>
@@ -271,6 +302,12 @@ const Billing = () => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0 0', color: 'var(--success)', fontWeight: 600, fontSize: '13px' }}>
                     <span>DISCOUNT APPLIED</span>
                     <span>-₹{discountAmount.toLocaleString('en-IN')} ({discountPercent}%)</span>
+                  </div>
+                )}
+                {creditApplied > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0 0', color: '#2980b9', fontWeight: 700, fontSize: '13px' }}>
+                    <span>💳 STORE CREDIT REDEEMED</span>
+                    <span>-₹{creditApplied.toLocaleString('en-IN')}</span>
                   </div>
                 )}
               </>
@@ -377,9 +414,15 @@ const Billing = () => {
               </div>
             )}
             {billGenerated.discount > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '8px', color: '#555' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: '#555' }}>
                 <span>Discount:</span>
                 <span>-₹{billGenerated.discount.toLocaleString('en-IN')}</span>
+              </div>
+            )}
+            {billGenerated.creditApplied > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '8px', color: '#2980b9', fontWeight: 600 }}>
+                <span>Store Credit Applied:</span>
+                <span>-₹{billGenerated.creditApplied.toLocaleString('en-IN')}</span>
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>

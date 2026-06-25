@@ -276,6 +276,16 @@ class SupabaseDB {
     return data || [];
   }
 
+  async getBranchReturns(branch_id) {
+    const { data, error } = await supabase
+      .from('returns_exchanges')
+      .select('*')
+      .eq('branch_id', branch_id)
+      .order('created_at', { ascending: false });
+    if (error) return [];
+    return data || [];
+  }
+
   async processExchange(exchangeData) {
     // 1. Insert into returns_exchanges
     const { data: exRecord, error: exErr } = await supabase
