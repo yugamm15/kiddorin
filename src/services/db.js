@@ -1,6 +1,10 @@
 import { supabase } from './supabaseClient';
 
 class SupabaseDB {
+  constructor() {
+    this.cache = {};
+  }
+
   async login(email, password) {
     // 1. Authenticate with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -117,16 +121,21 @@ class SupabaseDB {
       }]);
       
     if (purchaseError) throw purchaseError;
+    this.cache = {}; // invalidate cache on stock update
     return true;
   }
 
-  async getProducts(branch_id) {
+  async getProducts(branch_id, forceRefresh = false) {
+    if (!forceRefresh && this.cache[`products_${branch_id}`] && (Date.now() - this.cache[`products_${branch_id}`].ts < 60000)) {
+      return this.cache[`products_${branch_id}`].data;
+    }
     const { data, error } = await supabase
       .from('products')
       .select('*')
       .eq('branch_id', branch_id)
       .eq('is_active', true);
     if (error) throw error;
+    this.cache[`products_${branch_id}`] = { data, ts: Date.now() };
     return data;
   }
 
@@ -151,7 +160,9 @@ class SupabaseDB {
       .insert([{
         branch_id: billData.branch_id,
         total_amount: billData.total_amount,
-        payment_method: billData.payment_method
+        payment_method: billData.payment_method,
+        customer_name: billData.customer_name || 'Walk-in Customer',
+        customer_phone: billData.customer_phone || null
       }])
       .select()
       .single();
@@ -175,6 +186,7 @@ class SupabaseDB {
       await supabase.from('products').update({ quantity: prod.quantity - item.quantity }).eq('id', item.product_id);
     }
 
+    this.cache = {}; // invalidate cache on sale
     return newBill;
   }
 
@@ -250,6 +262,112 @@ class SupabaseDB {
     }));
 
     return branchesWithStats;
+  }
+
+  async getCustomerBills(branch_id) {
+    const { data, error } = await supabase
+      .from('bills')
+      .select('*, bill_items(*, products(*))')
+      .eq('branch_id', branch_id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+    return data || [];
+  }
+
+  async processExchange(exchangeData) {
+    // 1. Insert into returns_exchanges
+    const { data: exRecord, error: exErr } = await supabase
+      .from('returns_exchanges')
+      .insert([exchangeData])
+      .select()
+      .single();
+    if (exErr) throw exErr;
+
+    // 2. Adjust Stock for Returned Item
+    if (exchangeData.returned_product_id && exchangeData.return_reason !== 'Defective / Damaged') {
+      const { data: retProd } = await supabase.from('products').select('quantity').eq('id', exchangeData.returned_product_id).single();
+      if (retProd) {
+        await supabase.from('products').update({ quantity: retProd.quantity + exchangeData.returned_qty }).eq('id', exchangeData.returned_product_id);
+      }
+    }
+
+    // 3. Adjust Stock for New Exchanged Item
+    if (exchangeData.exchanged_product_id) {
+      const { data: exProd } = await supabase.from('products').select('quantity').eq('id', exchangeData.exchanged_product_id).single();
+      if (exProd) {
+        await supabase.from('products').update({ quantity: exProd.quantity - exchangeData.exchanged_qty }).eq('id', exchangeData.exchanged_product_id);
+      }
+    }
+
+    // 4. Record Store Credit if net_amount < 0
+    if (exchangeData.net_amount < 0 && exchangeData.customer_phone) {
+      const creditAmt = Math.abs(exchangeData.net_amount);
+      const { data: existCredit } = await supabase
+        .from('customer_credits')
+        .select('*')
+        .eq('branch_id', exchangeData.branch_id)
+        .eq('customer_phone', exchangeData.customer_phone)
+        .maybeSingle();
+
+      if (existCredit) {
+        await supabase
+          .from('customer_credits')
+          .update({ balance: Number(existCredit.balance) + creditAmt, updated_at: new Date().toISOString() })
+          .eq('id', existCredit.id);
+      } else {
+        await supabase
+          .from('customer_credits')
+          .insert([{ branch_id: exchangeData.branch_id, customer_phone: exchangeData.customer_phone, customer_name: exchangeData.customer_name, balance: creditAmt }]);
+      }
+
+      const { data: br } = await supabase.from('branches').select('customer_credits_balance').eq('id', exchangeData.branch_id).maybeSingle();
+      if (br) {
+        await supabase
+          .from('branches')
+          .update({ customer_credits_balance: Number(br.customer_credits_balance || 0) + creditAmt })
+          .eq('id', exchangeData.branch_id);
+      }
+    }
+
+    this.cache = {}; // invalidate cache
+    return exRecord;
+  }
+
+  async getCustomerCredit(phone, branch_id) {
+    if (!phone) return 0;
+    const { data } = await supabase
+      .from('customer_credits')
+      .select('balance')
+      .eq('branch_id', branch_id)
+      .eq('customer_phone', phone)
+      .maybeSingle();
+    return data ? Number(data.balance) : 0;
+  }
+
+  async deductCustomerCredit(phone, branch_id, amount) {
+    if (!phone || amount <= 0) return;
+    const { data: existCredit } = await supabase
+      .from('customer_credits')
+      .select('*')
+      .eq('branch_id', branch_id)
+      .eq('customer_phone', phone)
+      .maybeSingle();
+
+    if (existCredit) {
+      const newBal = Math.max(0, Number(existCredit.balance) - amount);
+      await supabase
+        .from('customer_credits')
+        .update({ balance: newBal, updated_at: new Date().toISOString() })
+        .eq('id', existCredit.id);
+
+      const { data: br } = await supabase.from('branches').select('customer_credits_balance').eq('id', branch_id).maybeSingle();
+      if (br) {
+        const newBranchBal = Math.max(0, Number(br.customer_credits_balance || 0) - amount);
+        await supabase.from('branches').update({ customer_credits_balance: newBranchBal }).eq('id', branch_id);
+      }
+    }
   }
 }
 

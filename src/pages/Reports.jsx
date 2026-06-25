@@ -465,7 +465,7 @@ const Reports = () => {
             <div className="recent-title" id="report-title" style={{ margin: 0, fontSize: '24px' }}>{titles[currentReport]}</div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button className="btn btn-secondary" onClick={exportCSV}>⬇️ Export CSV</button>
-              <button className="btn btn-primary" onClick={() => window.print()}>🖨️ Print Report</button>
+              <button className="btn btn-primary" onClick={() => { toast.dismiss(); window.print(); }}>🖨️ Print Report</button>
             </div>
           </div>
           <div className="filter-row no-print">

@@ -13,6 +13,7 @@ import Reports from './pages/Reports';
 import Branches from './pages/Branches';
 import Settings from './pages/Settings';
 import Dealers from './pages/Dealers';
+import Exchanges from './pages/Exchanges';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -34,6 +35,7 @@ const AppRoutes = () => {
         <Route path="inventory" element={<Inventory />} />
         <Route path="barcode" element={<BarcodePage />} />
         <Route path="billing" element={<Billing />} />
+        <Route path="exchanges" element={<Exchanges />} />
         <Route path="reports" element={<Reports />} />
         <Route path="branches" element={<Branches />} />
         <Route path="dealers" element={<Dealers />} />

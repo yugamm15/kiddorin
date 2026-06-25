@@ -311,6 +311,19 @@ h3,
   margin-top: 2px;
 }
 
+.navbar-logo {
+  max-height: 64px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+  transition: transform 0.3s ease;
+}
+
+.nav-center.brand-logo:hover .navbar-logo {
+  transform: scale(1.04);
+}
+
 .main-content {
   padding: 48px 40px;
   flex: 1;
@@ -1032,6 +1045,10 @@ textarea:focus {
     text-align: center;
   }
 
+  .navbar-logo {
+    max-height: 48px;
+  }
+
   .hamburger {
     display: block;
     order: 0;
@@ -1176,7 +1193,8 @@ textarea:focus {
 
   .report-grid,
   .no-print,
-  .chart-container {
+  .chart-container,
+  [role="status"] {
     display: none !important;
   }
 

@@ -10,7 +10,10 @@ const Billing = () => {
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [error, setError] = useState('');
   const [billGenerated, setBillGenerated] = useState(null);
-  const [finalPrice, setFinalPrice] = useState('');
+  const [discountValue, setDiscountValue] = useState('');
+  const [discountType, setDiscountType] = useState('amount');
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const barcodeInputRef = useRef(null);
 
   useEffect(() => {
@@ -74,8 +77,20 @@ const Billing = () => {
   };
 
   const subtotal = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const finalAmount = finalPrice && !isNaN(finalPrice) ? parseFloat(finalPrice) : subtotal;
-  const discountAmount = subtotal - finalAmount;
+  
+  let discountAmount = 0;
+  let discountPercent = 0;
+  if (discountValue && !isNaN(discountValue) && parseFloat(discountValue) > 0 && subtotal > 0) {
+    const val = parseFloat(discountValue);
+    if (discountType === 'percent') {
+      discountPercent = Math.min(val, 100);
+      discountAmount = Math.round((subtotal * discountPercent) / 100);
+    } else {
+      discountAmount = Math.min(val, subtotal);
+      discountPercent = parseFloat(((discountAmount / subtotal) * 100).toFixed(2));
+    }
+  }
+  const finalAmount = Math.max(0, subtotal - discountAmount);
 
   const confirmBill = async () => {
     if (items.length === 0) {
@@ -89,7 +104,9 @@ const Billing = () => {
       const newBill = await db.generateBill({
         branch_id: user.branch_id,
         total_amount: finalAmount,
-        payment_method: paymentMethod === 'cash' ? 'Cash' : 'UPI'
+        payment_method: paymentMethod === 'cash' ? 'Cash' : 'UPI',
+        customer_name: customerName.trim() || 'Walk-in Customer',
+        customer_phone: customerPhone.trim() || null
       }, dbItems);
       
       toast.success('Bill generated successfully!');
@@ -100,10 +117,13 @@ const Billing = () => {
         subtotal: subtotal,
         discount: discountAmount,
         total: finalAmount,
-        payment: paymentMethod
+        payment: paymentMethod,
+        customerName: customerName.trim() || 'Walk-in Customer',
+        customerPhone: customerPhone.trim()
       });
       setItems([]);
-      setFinalPrice('');
+      setDiscountValue('');
+      setDiscountType('amount');
     } catch (err) {
       setError(err.message);
     }
@@ -111,13 +131,17 @@ const Billing = () => {
 
   const clearBill = () => {
     setItems([]);
-    setFinalPrice('');
+    setDiscountValue('');
+    setDiscountType('amount');
+    setCustomerName('');
+    setCustomerPhone('');
     setBillGenerated(null);
     setError('');
     if (barcodeInputRef.current) barcodeInputRef.current.focus();
   };
 
   const printBill = () => {
+    toast.dismiss();
     window.print();
   };
 
@@ -128,6 +152,26 @@ const Billing = () => {
       
       <div className="billing-layout">
         <div>
+          <div className="card" style={{ marginBottom: '16px' }}>
+            <div className="section-title">Customer Details (Optional)</div>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <input 
+                type="text" 
+                placeholder="Customer Name (e.g. Rahul)..." 
+                value={customerName}
+                onChange={e => setCustomerName(e.target.value)}
+                style={{ flex: '1 1 140px' }}
+              />
+              <input 
+                type="text" 
+                placeholder="Phone No. (for returns)..." 
+                value={customerPhone}
+                onChange={e => setCustomerPhone(e.target.value)}
+                style={{ flex: '1 1 140px' }}
+              />
+            </div>
+          </div>
+
           <div className="card" style={{ marginBottom: '16px' }}>
             <div className="section-title">Scan Item</div>
             <div className="scan-input-wrap">
@@ -193,19 +237,43 @@ const Billing = () => {
             </div>
             
             {items.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
-                <span className="label" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>FINAL PRICE (Optional)</span>
-                <div style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>₹</span>
-                  <input 
-                    type="number" 
-                    value={finalPrice} 
-                    onChange={e => setFinalPrice(e.target.value)} 
-                    style={{ padding: '10px 12px 10px 24px', width: '140px', borderRadius: '4px', border: '1px solid var(--border)', textAlign: 'right', fontWeight: 'bold', fontSize: '16px', fontFamily: '"Playfair Display", serif' }}
-                    placeholder={subtotal}
-                  />
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+                  <span className="label" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>DISCOUNT (OPTIONAL)</span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <input 
+                        type="number" 
+                        value={discountType === 'percent' ? discountValue : (discountPercent ? discountPercent : '')} 
+                        onChange={e => { setDiscountType('percent'); setDiscountValue(e.target.value); }} 
+                        style={{ padding: '10px 26px 10px 10px', width: '92px', borderRadius: '4px', border: '1px solid var(--border)', textAlign: 'right', fontWeight: 'bold', fontSize: '14px', background: discountType === 'percent' && discountValue ? '#fff' : 'var(--off-white)' }}
+                        placeholder="0"
+                        min="0"
+                        max="100"
+                      />
+                      <span style={{ position: 'absolute', right: '10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '13px' }}>%</span>
+                    </div>
+                    <span style={{ color: '#bbb', fontWeight: 'bold' }}>OR</span>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <span style={{ position: 'absolute', left: '10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '13px' }}>₹</span>
+                      <input 
+                        type="number" 
+                        value={discountType === 'amount' ? discountValue : (discountAmount ? discountAmount : '')} 
+                        onChange={e => { setDiscountType('amount'); setDiscountValue(e.target.value); }} 
+                        style={{ padding: '10px 10px 10px 22px', width: '110px', borderRadius: '4px', border: '1px solid var(--border)', textAlign: 'right', fontWeight: 'bold', fontSize: '14px', background: discountType === 'amount' && discountValue ? '#fff' : 'var(--off-white)' }}
+                        placeholder="0"
+                        min="0"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
+                {discountAmount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0 0', color: 'var(--success)', fontWeight: 600, fontSize: '13px' }}>
+                    <span>DISCOUNT APPLIED</span>
+                    <span>-₹{discountAmount.toLocaleString('en-IN')} ({discountPercent}%)</span>
+                  </div>
+                )}
+              </>
             )}
             
             <div className="total-row" style={{ borderTop: 'none', paddingTop: '16px' }}>
@@ -262,15 +330,22 @@ const Billing = () => {
           <div className="pb-header">
             <div className="pb-store-name">Kiddorin</div>
             <div className="pb-tagline">The World in Their Wardrobe</div>
-            <div className="pb-branch">{user?.branch?.name || 'Main Store'}</div>
+            <div className="pb-branch" style={{ marginBottom: '12px' }}>{user?.branch?.name || 'Main Store'}</div>
+            <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '12px' }}>
+              G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009
+            </div>
+            <div style={{ fontSize: '10px', fontWeight: '600' }}>
+              Pankaj Kubadiya +91 94283 96273
+            </div>
           </div>
           <div className="pb-details">
             <div><strong>Date:</strong> {billGenerated.date}</div>
-            {billGenerated.payment === 'cash' && (
-              <div><strong>Bill No:</strong> {billGenerated.id.toUpperCase()}</div>
+            <div><strong>Bill No:</strong> {billGenerated.id.toUpperCase()}</div>
+            {billGenerated.customerPhone && (
+              <div><strong>Customer:</strong> {billGenerated.customerName} ({billGenerated.customerPhone})</div>
             )}
-            {billGenerated.payment !== 'cash' && (
-              <div><strong>Bill No:</strong> {billGenerated.id.toUpperCase()}</div>
+            {!billGenerated.customerPhone && (
+              <div><strong>Customer:</strong> {billGenerated.customerName}</div>
             )}
             <div><strong>Payment:</strong> {billGenerated.payment.toUpperCase()}</div>
           </div>
@@ -315,6 +390,7 @@ const Billing = () => {
           <div className="pb-footer">
             <div>Thank you for shopping with us!</div>
             <div>No Return | No Exchange</div>
+            <div style={{ marginTop: '4px', fontWeight: '600' }}>Follow us on Instagram @Kiddorin</div>
           </div>
         </div>
       )}
