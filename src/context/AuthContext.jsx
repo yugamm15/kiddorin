@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '../services/db';
+import { supabase } from '../services/supabaseClient';
 
 const AuthContext = createContext();
 
@@ -10,9 +11,17 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('kiddorin_user');
+    // 1. Erase any legacy localStorage session so login doesn't survive browser restart
+    localStorage.removeItem('kiddorin_user');
+    
+    // 2. Load session strictly from sessionStorage (cleared automatically when browser closes)
+    const storedUser = sessionStorage.getItem('kiddorin_user');
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        sessionStorage.removeItem('kiddorin_user');
+      }
     }
     setLoading(false);
   }, []);
@@ -21,15 +30,24 @@ export const AuthProvider = ({ children }) => {
     try {
       const userData = await db.login(username, password);
       setUser(userData);
-      localStorage.setItem('kiddorin_user', JSON.stringify(userData));
+      // Store session in sessionStorage
+      sessionStorage.setItem('kiddorin_user', JSON.stringify(userData));
+      // Remove any lingering localStorage items
+      localStorage.removeItem('kiddorin_user');
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error("Error signing out of Supabase:", e);
+    }
     setUser(null);
+    sessionStorage.removeItem('kiddorin_user');
     localStorage.removeItem('kiddorin_user');
   };
 
