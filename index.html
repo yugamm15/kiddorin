@@ -2,6 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Security Hardening Headers against XSS, Clickjacking, and Sniffing Attacks -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: 'unsafe-inline' 'unsafe-eval';" />
     <link rel="icon" type="image/png" href="/images/logo%20black.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kiddorin - The World in Their Wardrobe</title>
