@@ -365,9 +365,7 @@ const Billing = () => {
       {billGenerated && (
         <div id="print-bill" className="print-bill-container">
           <div className="pb-header">
-            <div className="pb-store-name">Kiddorin</div>
-            <div className="pb-tagline">The World in Their Wardrobe</div>
-            <div className="pb-branch" style={{ marginBottom: '12px' }}>{user?.branch?.name || 'Main Store'}</div>
+            <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '180px', maxHeight: '65px', objectFit: 'contain', display: 'block', margin: '0 auto 12px auto' }} />
             <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '12px' }}>
               G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009
             </div>

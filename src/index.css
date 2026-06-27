@@ -1371,3 +1371,16 @@ textarea:focus {
 .skeleton-title { height: 32px; width: 50%; margin-bottom: 20px; }
 .skeleton-card { height: 150px; width: 100%; }
 .skeleton-table-row { height: 40px; margin-bottom: 8px; width: 100%; }
+
+/* ANTI-FLICKER & PERFORMANCE OPTIMIZATION */
+button, .btn, input, select, textarea, .card, .barcode-card, .report-btn, .branch-card {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease, transform 0.2s ease !important;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+input[type="checkbox"], input[type="radio"] {
+  transition: none !important;
+  cursor: pointer;
+  transform: translateZ(0);
+}

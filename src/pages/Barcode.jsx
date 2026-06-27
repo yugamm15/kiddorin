@@ -12,6 +12,7 @@ const BarcodePage = () => {
   const [searchColor, setSearchColor] = useState('');
   const [searchSize, setSearchSize] = useState('');
   const [printPaperSize, setPrintPaperSize] = useState('1.5x2');
+  const [selectedIds, setSelectedIds] = useState([]);
   const printRef = useRef(null);
 
   useEffect(() => {
@@ -32,9 +33,28 @@ const BarcodePage = () => {
     return matchName && matchColor && matchSize;
   });
 
+  const itemsToPrint = products.filter(s => selectedIds.includes(s.id));
+  const areAllFilteredSelected = filtered.length > 0 && filtered.every(s => selectedIds.includes(s.id));
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      const filteredIds = filtered.map(s => s.id);
+      setSelectedIds(prev => [...new Set([...prev, ...filteredIds])]);
+    } else {
+      const filteredIdsSet = new Set(filtered.map(s => s.id));
+      setSelectedIds(prev => prev.filter(id => !filteredIdsSet.has(id)));
+    }
+  };
+
+  const handleSelectOne = (id) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
   useEffect(() => {
-    // Generate barcodes for visible items
-    filtered.forEach(s => {
+    // Generate barcodes for visible selected items
+    itemsToPrint.forEach(s => {
       try {
         if (!s.barcode) return;
         const elem = document.getElementById(`barsvg-${s.id}`);
@@ -51,15 +71,17 @@ const BarcodePage = () => {
         });
       } catch(e) {}
     });
-  }, [filtered, printPaperSize]);
+  }, [selectedIds, products, printPaperSize]);
 
   const printBarcodes = () => {
-    if (filtered.length === 0) {
-      toast.error('No products visible to print!');
+    if (itemsToPrint.length === 0) {
+      toast.error('Please select at least one product to print!');
       return;
     }
     toast.dismiss();
-    window.print();
+    setTimeout(() => {
+      window.print();
+    }, 150);
   };
 
   return (
@@ -105,7 +127,7 @@ const BarcodePage = () => {
             </select>
           </div>
           <button className="btn btn-primary" onClick={printBarcodes} style={{ height: '42px', padding: '0 24px' }}>
-            🖨️ Print All Visible
+            🖨️ Print Selected ({itemsToPrint.length})
           </button>
         </div>
       </div>
@@ -114,6 +136,14 @@ const BarcodePage = () => {
         <table className="table">
           <thead>
             <tr>
+              <th style={{ width: '40px', textAlign: 'center' }}>
+                <input 
+                  type="checkbox" 
+                  checked={areAllFilteredSelected}
+                  onChange={handleSelectAll}
+                  style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                />
+              </th>
               <th>Design No.</th>
               <th>Category</th>
               <th>Color</th>
@@ -126,24 +156,35 @@ const BarcodePage = () => {
             {loading ? (
               [...Array(6)].map((_, i) => (
                 <tr key={`skel-${i}`}>
-                  <td colSpan="6" style={{ padding: '8px 16px' }}>
+                  <td colSpan="7" style={{ padding: '8px 16px' }}>
                     <div className="skeleton skeleton-table-row" style={{ marginBottom: 0 }}></div>
                   </td>
                 </tr>
               ))
             ) : filtered.length === 0 ? (
-              <tr><td colSpan="6" style={{textAlign: 'center', padding: '24px', color: '#aaa'}}>No products found</td></tr>
+              <tr><td colSpan="7" style={{textAlign: 'center', padding: '24px', color: '#aaa'}}>No products found</td></tr>
             ) : (
-              filtered.map(s => (
-                <tr key={s.id}>
-                  <td><strong>{s.design_number}</strong></td>
-                  <td>{s.category} ({s.gender})</td>
-                  <td>{s.color}</td>
-                  <td>{s.size}</td>
-                  <td>₹{s.selling_price}</td>
-                  <td style={{fontFamily: 'monospace', color: 'var(--text-muted)'}}>{s.barcode}</td>
-                </tr>
-              ))
+              filtered.map(s => {
+                const isSelected = selectedIds.includes(s.id);
+                return (
+                  <tr key={s.id} style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }}>
+                    <td style={{ textAlign: 'center' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={isSelected}
+                        onChange={() => handleSelectOne(s.id)}
+                        style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                      />
+                    </td>
+                    <td><strong>{s.design_number}</strong></td>
+                    <td>{s.category} ({s.gender})</td>
+                    <td>{s.color}</td>
+                    <td>{s.size}</td>
+                    <td>₹{s.selling_price}</td>
+                    <td style={{fontFamily: 'monospace', color: 'var(--text-muted)'}}>{s.barcode}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -190,7 +231,7 @@ const BarcodePage = () => {
 
       {/* THIS IS HIDDEN ON SCREEN, ONLY SHOWS DURING PRINTING */}
       <div className={`barcode-grid print-mode-${printPaperSize} print-only`} ref={printRef} id="print-bill">
-        {filtered.map(s => {
+        {itemsToPrint.map(s => {
           const availSizes = [...new Set(products.filter(p => p.design_number === s.design_number).map(p => p.size).filter(Boolean))].join(', ');
           return (
             <div key={s.id} className="barcode-card">

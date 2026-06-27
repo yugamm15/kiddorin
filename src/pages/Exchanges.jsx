@@ -389,7 +389,7 @@ const Exchanges = () => {
           <div className="card" style={{ width: '420px', maxWidth: '95%', margin: 0, padding: '24px' }}>
             <div id="exchange-print-slip" style={{ fontFamily: 'Montserrat, sans-serif', color: '#000' }}>
               <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '12px', marginBottom: '12px' }}>
-                <div style={{ fontFamily: 'Playfair Display, serif', fontSize: '22px', fontWeight: 700 }}>KIDDORIN</div>
+                <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '160px', maxHeight: '55px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} />
                 <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px' }}>{completedExchange.netAmount < 0 ? 'Store Credit Note (Voucher)' : 'Customer Exchange Note'}</div>
                 <div style={{ fontSize: '11px', marginTop: '4px' }}>Slip No: {completedExchange.id}</div>
                 <div style={{ fontSize: '10px', color: '#555' }}>Date: {completedExchange.date}</div>

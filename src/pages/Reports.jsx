@@ -455,8 +455,7 @@ const Reports = () => {
           
           {/* Printable Document Header */}
           <div className="print-only" style={{ textAlign: 'center', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid #000' }}>
-            <h1 style={{ fontFamily: 'Playfair Display', margin: 0, fontSize: '28px' }}>Kiddorin</h1>
-            <div style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '2px', marginTop: '4px' }}>The World in Their Wardrobe</div>
+            <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '200px', maxHeight: '70px', objectFit: 'contain', display: 'block', margin: '0 auto 12px auto' }} />
             <div style={{ fontSize: '16px', marginTop: '12px', fontWeight: 600 }}>{titles[currentReport].replace(/[^a-zA-Z &]/g, '').trim()}</div>
             <div style={{ fontSize: '11px', marginTop: '4px', color: '#666' }}>Generated on: {new Date().toLocaleString('en-IN')}</div>
           </div>
