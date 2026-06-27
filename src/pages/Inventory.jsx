@@ -17,6 +17,9 @@ const Inventory = () => {
   const [restockPrice, setRestockPrice] = useState('');
   const [restockDealer, setRestockDealer] = useState('');
 
+  const [deleteProductItem, setDeleteProductItem] = useState(null);
+  const [deleteQty, setDeleteQty] = useState('');
+
   useEffect(() => {
     db.getDealers().then(setDealers);
   }, []);
@@ -42,6 +45,7 @@ const Inventory = () => {
       toast.error('Enter valid quantity');
       return;
     }
+    const toastId = toast.loading('Adding restock to inventory... Please wait ⏳');
     try {
       await db.addStock({
         category: restockProduct.category,
@@ -56,13 +60,61 @@ const Inventory = () => {
         branch_id: user.branch_id,
         date: new Date().toISOString().split('T')[0]
       });
-      toast.success(`Successfully added ${restockQty} to stock!`);
+      toast.success(`Successfully added ${restockQty} to stock!`, { id: toastId });
       setRestockProduct(null);
       // Refresh products list
       const data = await db.getProducts(user.branch_id);
       setProducts(data || []);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err.message, { id: toastId });
+    }
+  };
+
+  const openDeleteModal = (product) => {
+    setDeleteProductItem(product);
+    setDeleteQty('');
+  };
+
+  const handleConfirmDeleteStock = async () => {
+    if (!deleteQty || parseInt(deleteQty) <= 0) {
+      toast.error('Enter a valid quantity to delete');
+      return;
+    }
+    const qtyToRemove = parseInt(deleteQty);
+    if (qtyToRemove > deleteProductItem.quantity) {
+      toast.error(`Cannot delete ${qtyToRemove}. Only ${deleteProductItem.quantity} currently in stock.`);
+      return;
+    }
+
+    const toastId = toast.loading('Removing stock... Please wait ⏳');
+    try {
+      if (qtyToRemove === deleteProductItem.quantity) {
+        await db.deleteProduct(deleteProductItem.id);
+        toast.success(`Entire stock removed for ${deleteProductItem.design_number}!`, { id: toastId });
+      } else {
+        await db.reduceStock(deleteProductItem.id, qtyToRemove);
+        toast.success(`Reduced stock by ${qtyToRemove} for ${deleteProductItem.design_number}!`, { id: toastId });
+      }
+      setDeleteProductItem(null);
+      const data = await db.getProducts(user.branch_id);
+      setProducts(data || []);
+    } catch (err) {
+      toast.error('Failed to update stock: ' + err.message, { id: toastId });
+    }
+  };
+
+  const handleDeleteEntireProduct = async () => {
+    if (window.confirm(`Are you sure you want to permanently delete ALL stock of "${deleteProductItem.design_number}"?`)) {
+      const toastId = toast.loading('Deleting entire product permanently... Please wait ⏳');
+      try {
+        await db.deleteProduct(deleteProductItem.id);
+        toast.success('Entire item deleted successfully!', { id: toastId });
+        setDeleteProductItem(null);
+        const data = await db.getProducts(user.branch_id);
+        setProducts(data || []);
+      } catch (err) {
+        toast.error('Failed to delete product: ' + err.message, { id: toastId });
+      }
     }
   };
 
@@ -163,9 +215,12 @@ const Inventory = () => {
                       {s.quantity > 0 ? 'In Stock' : 'Out'}
                     </span>
                   </td>
-                  <td>
+                  <td style={{ display: 'flex', gap: '6px' }}>
                     <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '10px' }} onClick={() => openRestock(s)}>
                       ➕ RESTOCK
+                    </button>
+                    <button className="btn btn-danger" style={{ padding: '6px 10px', fontSize: '10px', background: 'var(--danger)', color: 'var(--white)', border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer' }} onClick={() => openDeleteModal(s)} title="Delete / Reduce Stock">
+                      🗑️ DELETE
                     </button>
                   </td>
                 </tr>
@@ -209,6 +264,57 @@ const Inventory = () => {
             <div style={{ display: 'flex', gap: '12px' }}>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleRestock}>Confirm Restock</button>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setRestockProduct(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete / Reduce Stock Modal */}
+      {deleteProductItem && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div className="card" style={{ width: '400px', margin: 0 }}>
+            <div className="section-title" style={{ color: 'var(--danger)' }}>🗑️ Reduce or Delete Stock</div>
+            <p style={{ marginBottom: '16px', color: 'var(--text-muted)', fontSize: '13px' }}>
+              Product: <strong style={{ color: 'var(--dark)' }}>{deleteProductItem.design_number}</strong> | {deleteProductItem.color} | {deleteProductItem.size}
+              <br/>
+              Current Available Quantity: <strong style={{ color: 'var(--primary)', fontSize: '15px' }}>{deleteProductItem.quantity}</strong>
+            </p>
+            
+            <div className="form-group" style={{ marginBottom: '20px' }}>
+              <label>Quantity to Delete / Remove</label>
+              <input 
+                type="number" 
+                min="1" 
+                max={deleteProductItem.quantity}
+                value={deleteQty} 
+                onChange={e => setDeleteQty(e.target.value)} 
+                placeholder={`Enter quantity (1 to ${deleteProductItem.quantity})`} 
+              />
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Entering {deleteProductItem.quantity} will completely remove this item from inventory.
+              </span>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+              <button className="btn btn-danger" style={{ flex: 1, background: 'var(--danger)', color: 'var(--white)', border: 'none' }} onClick={handleConfirmDeleteStock}>
+                Confirm Removal
+              </button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setDeleteProductItem(null)}>
+                Cancel
+              </button>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', textAlign: 'center' }}>
+              <button 
+                onClick={handleDeleteEntireProduct} 
+                style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '12px', textDecoration: 'underline', cursor: 'pointer', fontWeight: '600' }}
+              >
+                ⚠ Delete Entire Product Permanently
+              </button>
             </div>
           </div>
         </div>

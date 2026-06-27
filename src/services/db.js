@@ -153,6 +153,18 @@ class SupabaseDB {
     return true;
   }
 
+  async checkDesignExists(design_number, branch_id) {
+    if (!design_number || !branch_id) return false;
+    const { data, error } = await supabase
+      .from('products')
+      .select('id')
+      .ilike('design_number', design_number.trim())
+      .eq('branch_id', branch_id)
+      .limit(1);
+    if (error) return false;
+    return data && data.length > 0;
+  }
+
   async getProducts(branch_id, forceRefresh = false) {
     if (!forceRefresh && this.cache[`products_${branch_id}`] && (Date.now() - this.cache[`products_${branch_id}`].ts < 60000)) {
       return this.cache[`products_${branch_id}`].data;
@@ -165,6 +177,40 @@ class SupabaseDB {
     if (error) throw error;
     this.cache[`products_${branch_id}`] = { data, ts: Date.now() };
     return data;
+  }
+
+  async deleteProduct(product_id) {
+    if (!product_id) return false;
+    // First delete any purchases linked to this product
+    await supabase.from('purchases').delete().eq('product_id', product_id);
+    // Delete the product
+    const { error } = await supabase.from('products').delete().eq('id', product_id);
+    if (error) throw error;
+    this.cache = {}; // invalidate cache
+    return true;
+  }
+
+  async reduceStock(product_id, qtyToRemove) {
+    if (!product_id || qtyToRemove <= 0) return false;
+    const { data: existing, error: fetchErr } = await supabase
+      .from('products')
+      .select('quantity')
+      .eq('id', product_id)
+      .single();
+    if (fetchErr || !existing) throw new Error("Product not found");
+
+    const newQty = existing.quantity - parseInt(qtyToRemove);
+    if (newQty <= 0) {
+      return await this.deleteProduct(product_id);
+    } else {
+      const { error } = await supabase
+        .from('products')
+        .update({ quantity: newQty })
+        .eq('id', product_id);
+      if (error) throw error;
+      this.cache = {};
+      return true;
+    }
   }
 
   async getProductByBarcode(barcode, branch_id) {

@@ -41,15 +41,16 @@ const Branches = () => {
       return;
     }
     setSubmitting(true);
+    const toastId = toast.loading('Creating store branch and registering login account... Please wait ⏳');
     try {
       await db.addBranch(formData);
-      toast.success(`Branch "${formData.name}" and login credentials created successfully!`);
+      toast.success(`Branch "${formData.name}" and login credentials created successfully!`, { id: toastId });
       setShowModal(false);
       setFormData({ name: '', address: '', phone: '', email: '', password: '' });
       fetchBranches();
     } catch (err) {
       console.error(err);
-      toast.error(err.message || 'Failed to create branch.');
+      toast.error(err.message || 'Failed to create branch.', { id: toastId });
     } finally {
       setSubmitting(false);
     }
