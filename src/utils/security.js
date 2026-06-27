@@ -84,3 +84,19 @@ export function containsSqlInjectionPayload(text) {
   const sqlKeywords = /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|EXEC|EXECUTE|WHERE|FROM)\b|(--|\#|\/\*|\*\/|';|";))/i;
   return sqlKeywords.test(text);
 }
+
+/**
+ * Cryptographically hashes a password using SHA-256 Web Crypto API.
+ * Ensures passwords stored in fallback tables cannot be read in plain text.
+ *
+ * @param {string} password - Raw string password
+ * @returns {Promise<string>} Hexadecimal SHA-256 hash
+ */
+export async function hashPassword(password) {
+  if (!password || typeof password !== 'string') return '';
+  const msgBuffer = new TextEncoder().encode(password);
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex;
+}

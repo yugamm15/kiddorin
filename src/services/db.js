@@ -1,4 +1,6 @@
 import { supabase } from './supabaseClient';
+import { createClient } from '@supabase/supabase-js';
+import { hashPassword } from '../utils/security';
 
 class SupabaseDB {
   constructor() {
@@ -6,24 +8,50 @@ class SupabaseDB {
   }
 
   async login(email, password) {
-    // 1. Authenticate with Supabase Auth
+    // 1. Try Authenticating with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: email,
       password: password,
     });
 
-    if (authError) throw new Error("Invalid email or password");
+    if (!authError && authData?.user) {
+      // Fetch user profile and branch details
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*, branches(*)')
+        .eq('id', authData.user.id)
+        .single();
 
-    // 2. Fetch user profile and branch details
-    const { data: profile, error: profileError } = await supabase
+      if (profile) {
+        return { ...profile, branch: profile.branches };
+      }
+    }
+
+    // 2. Fallback: Check users table directly by email & hashed password OR plain password (for backwards compatibility)
+    const hashed = await hashPassword(password);
+    let { data: fallbackProfile, error: fallbackError } = await supabase
       .from('users')
       .select('*, branches(*)')
-      .eq('id', authData.user.id)
-      .single();
+      .eq('email', email)
+      .eq('password', hashed)
+      .maybeSingle();
 
-    if (profileError || !profile) throw new Error("User profile not found in database.");
+    if (!fallbackProfile) {
+      const res = await supabase
+        .from('users')
+        .select('*, branches(*)')
+        .eq('email', email)
+        .eq('password', password)
+        .maybeSingle();
+      fallbackProfile = res.data;
+      fallbackError = res.error;
+    }
 
-    return { ...profile, branch: profile.branches };
+    if (fallbackError || !fallbackProfile) {
+      throw new Error("Invalid email or password");
+    }
+
+    return { ...fallbackProfile, branch: fallbackProfile.branches };
   }
 
   async addDealer(dealerData) {
@@ -262,6 +290,52 @@ class SupabaseDB {
     }));
 
     return branchesWithStats;
+  }
+
+  async addBranch(branchData) {
+    // 1. Insert into branches table
+    const { data: newBranch, error: branchError } = await supabase
+      .from('branches')
+      .insert([{
+        name: branchData.name,
+        address: branchData.address || '',
+        phone: branchData.phone || ''
+      }])
+      .select()
+      .single();
+
+    if (branchError) throw branchError;
+
+    // 2. Register user in Supabase Auth using a temporary client without persisting session
+    const tempClient = createClient(
+      import.meta.env.VITE_SUPABASE_URL,
+      import.meta.env.VITE_SUPABASE_ANON_KEY,
+      { auth: { persistSession: false, autoRefreshToken: false } }
+    );
+
+    const { data: authData } = await tempClient.auth.signUp({
+      email: branchData.email,
+      password: branchData.password
+    });
+
+    const userId = authData?.user?.id || crypto.randomUUID();
+    const hashedPassword = await hashPassword(branchData.password);
+
+    // 3. Save branch user login credentials linked to this branch_id
+    const { error: userError } = await supabase
+      .from('users')
+      .insert([{
+        id: userId,
+        username: branchData.name,
+        email: branchData.email,
+        password: hashedPassword,
+        branch_id: newBranch.id,
+        role: 'admin'
+      }]);
+
+    if (userError) throw userError;
+
+    return newBranch;
   }
 
   async getCustomerBills(branch_id) {
