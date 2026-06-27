@@ -387,11 +387,11 @@ const Exchanges = () => {
       {completedExchange && (
         <div style={{ position: 'fixed', top:0, left:0, right:0, bottom:0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="card" style={{ width: '420px', maxWidth: '95%', margin: 0, padding: '24px' }}>
-            <div id="exchange-print-slip" style={{ fontFamily: 'Montserrat, sans-serif', color: '#000' }}>
+            <div className="exchange-slip-preview" style={{ fontFamily: 'Montserrat, sans-serif', color: '#000' }}>
               <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '12px', marginBottom: '12px' }}>
                 <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '160px', maxHeight: '55px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} />
                 <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px' }}>{completedExchange.netAmount < 0 ? 'Store Credit Note (Voucher)' : 'Customer Exchange Note'}</div>
-                <div style={{ fontSize: '11px', marginTop: '4px' }}>Slip No: {completedExchange.id}</div>
+                <div style={{ fontSize: '11px', marginTop: '4px' }}>Slip No: {completedExchange.id.slice(0, 8).toUpperCase()}</div>
                 <div style={{ fontSize: '10px', color: '#555' }}>Date: {completedExchange.date}</div>
               </div>
 
@@ -432,6 +432,7 @@ const Exchanges = () => {
 
               <div style={{ textAlign: 'center', fontSize: '9px', color: '#666' }}>
                 Thank you for shopping with Kiddorin!<br/>Exchanged goods are non-refundable.
+                <div style={{ marginTop: '4px', fontWeight: '600', color: '#000' }}>Follow us on Instagram @Kiddorin</div>
               </div>
             </div>
 
@@ -487,6 +488,65 @@ const Exchanges = () => {
             </div>
 
             <button className="btn btn-primary" style={{ width: '100%', marginTop: '20px' }} onClick={() => setViewingReturnHistory(null)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden Thermal Print Exchange Slip Component */}
+      {completedExchange && (
+        <div id="exchange-print-slip" className="print-bill-container">
+          <div className="pb-header">
+            <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '180px', maxHeight: '65px', objectFit: 'contain', display: 'block', margin: '0 auto 12px auto' }} />
+            <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '12px' }}>
+              G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009
+            </div>
+            <div style={{ fontSize: '10px', fontWeight: '600', marginBottom: '8px' }}>
+              +91 94283 96273 | +91 94276 56615
+            </div>
+            <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', borderTop: '1px dashed #000', paddingTop: '8px' }}>
+              {completedExchange.netAmount < 0 ? 'Store Credit Note (Voucher)' : 'Customer Exchange Note'}
+            </div>
+          </div>
+          <div className="pb-details">
+            <div><strong>Date:</strong> {completedExchange.date}</div>
+            <div><strong>Slip No:</strong> {completedExchange.id.slice(0, 8).toUpperCase()}</div>
+            <div><strong>Customer:</strong> {completedExchange.customerName} {completedExchange.customerPhone ? `(${completedExchange.customerPhone})` : ''}</div>
+          </div>
+          <table className="pb-table">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th style={{ textAlign: 'right' }}>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                  <div style={{ fontWeight: 700 }}>RETURNED</div>
+                  <div>{completedExchange.returnedItem?.products?.category} ({completedExchange.returnedItem?.products?.size})</div>
+                  <div style={{ fontSize: '9px', color: '#444' }}>Reason: {completedExchange.returnReason}</div>
+                </td>
+                <td style={{ textAlign: 'right' }}>-₹{completedExchange.returnedItem?.price_at_sale}</td>
+              </tr>
+              {completedExchange.exchangedItem && (
+                <tr>
+                  <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                    <div style={{ fontWeight: 700 }}>ISSUED</div>
+                    <div>{completedExchange.exchangedItem.category} ({completedExchange.exchangedItem.size})</div>
+                  </td>
+                  <td style={{ textAlign: 'right' }}>+₹{completedExchange.exchangedItem.selling_price}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <div className="pb-total">
+            <span>Net Settled:</span>
+            <span>{completedExchange.netAmount > 0 ? `Paid ₹${completedExchange.netAmount} (${completedExchange.paymentMethod})` : `Credit ₹${Math.abs(completedExchange.netAmount)}`}</span>
+          </div>
+          <div className="pb-footer">
+            <div>Thank you for shopping with Kiddorin!</div>
+            <div>Exchanged goods are non-refundable.</div>
+            <div style={{ marginTop: '4px', fontWeight: '600' }}>Follow us on Instagram @Kiddorin</div>
           </div>
         </div>
       )}

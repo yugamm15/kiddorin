@@ -49,7 +49,8 @@ const Billing = () => {
       } else {
         setItems([...items, {
           product_id: product.id,
-          name: `${product.category} ${product.color} ${product.size}`,
+          category: product.category,
+          name: product.category,
           design: product.design_number,
           size: product.size,
           color: product.color,
@@ -237,14 +238,26 @@ const Billing = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, i) => (
-                    <tr key={item.product_id}>
-                      <td>{i + 1}</td>
-                      <td>{item.name}</td>
-                      <td>{item.size}</td>
-                      <td>{item.color}</td>
-                      <td>{item.design}</td>
-                      <td>₹{item.price}</td>
+                  {items.map((item, i) => {
+                    let catText = item.category || item.name || '';
+                    if (item.color) {
+                      const regColor = new RegExp(`\\b${item.color}\\b`, 'gi');
+                      catText = catText.replace(regColor, '').trim();
+                    }
+                    if (item.size) {
+                      const regSize = new RegExp(`\\b${item.size}\\b`, 'gi');
+                      catText = catText.replace(regSize, '').trim();
+                    }
+                    catText = catText.replace(/\s+/g, ' ').replace(/[|-]\s*$/, '').trim() || item.category || item.name;
+
+                    return (
+                      <tr key={item.product_id}>
+                        <td>{i + 1}</td>
+                        <td>{catText}</td>
+                        <td>{item.size}</td>
+                        <td>{item.color}</td>
+                        <td>{item.design}</td>
+                        <td>₹{item.price}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <button onClick={() => updateQuantity(item.product_id, -1)} style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', background: '#fff' }}>-</button>
@@ -255,7 +268,8 @@ const Billing = () => {
                       <td>₹{item.price * item.qty}</td>
                       <td><span onClick={() => removeItem(item.product_id)} style={{ color: 'var(--danger)', cursor: 'pointer', fontSize: '16px' }}>✕</span></td>
                     </tr>
-                  ))}
+                  );
+                })}
                   {items.length === 0 && (
                     <tr><td colSpan="9" style={{ textAlign: 'center', color: '#aaa', padding: '20px' }}>No items added yet</td></tr>
                   )}
@@ -333,12 +347,6 @@ const Billing = () => {
                 <span className="pay-label">UPI</span>
               </div>
             </div>
-            <div style={{ marginBottom: '12px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Branch</label>
-              <select style={{ width: '100%', marginTop: '6px', padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: '8px', fontSize: '14px' }} disabled>
-                <option>{user?.branch?.name}</option>
-              </select>
-            </div>
             <button className="btn btn-success" style={{ width: '100%', padding: '14px', fontSize: '15px' }} onClick={confirmBill}>✓ Confirm & Generate Bill</button>
             <button className="btn btn-secondary" style={{ width: '100%', marginTop: '8px' }} onClick={clearBill}>Clear Bill</button>
           </div>
@@ -347,8 +355,7 @@ const Billing = () => {
             <div className="card" style={{ marginTop: '16px' }}>
               <div className="section-title">Bill Generated ✓</div>
               <div>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>Bill ID: <strong>{billGenerated.id.toUpperCase()}</strong> • {billGenerated.date}</div>
-                <div style={{ fontSize: '13px', marginBottom: '4px' }}>Branch: {user?.branch?.name}</div>
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>Bill ID: <strong>{billGenerated.id.slice(0, 8).toUpperCase()}</strong> • {billGenerated.date}</div>
                 <div style={{ fontSize: '13px', marginBottom: '12px' }}>Items: {billGenerated.items.length} | Payment: <span className={`badge ${billGenerated.payment === 'cash' ? 'badge-green' : 'badge-blue'}`}>{billGenerated.payment.toUpperCase()}</span></div>
                 {billGenerated.discount > 0 && (
                   <div style={{ fontSize: '13px', color: 'var(--success)', marginBottom: '4px' }}>Discount Applied: ₹{billGenerated.discount.toLocaleString('en-IN')}</div>
@@ -370,12 +377,12 @@ const Billing = () => {
               G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009
             </div>
             <div style={{ fontSize: '10px', fontWeight: '600' }}>
-              Pankaj Kubadiya +91 94283 96273
+              +91 94283 96273 | +91 94276 56615
             </div>
           </div>
           <div className="pb-details">
             <div><strong>Date:</strong> {billGenerated.date}</div>
-            <div><strong>Bill No:</strong> {billGenerated.id.toUpperCase()}</div>
+            <div><strong>Bill No:</strong> {billGenerated.id.slice(0, 8).toUpperCase()}</div>
             {billGenerated.customerPhone && (
               <div><strong>Customer:</strong> {billGenerated.customerName} ({billGenerated.customerPhone})</div>
             )}
@@ -394,14 +401,30 @@ const Billing = () => {
               </tr>
             </thead>
             <tbody>
-              {billGenerated.items.map((item, idx) => (
-                <tr key={idx}>
-                  <td>{item.name} {item.size ? `| ${item.size}` : ''} {item.color ? `| ${item.color}` : ''}</td>
-                  <td>{item.qty}</td>
-                  <td>{item.price}</td>
-                  <td>{item.price * item.qty}</td>
-                </tr>
-              ))}
+              {billGenerated.items.map((item, idx) => {
+                let catText = item.category || item.name || '';
+                if (item.color) {
+                  const regColor = new RegExp(`\\b${item.color}\\b`, 'gi');
+                  catText = catText.replace(regColor, '').trim();
+                }
+                if (item.size) {
+                  const regSize = new RegExp(`\\b${item.size}\\b`, 'gi');
+                  catText = catText.replace(regSize, '').trim();
+                }
+                catText = catText.replace(/\s+/g, ' ').replace(/[|-]\s*$/, '').trim() || item.category || item.name;
+
+                return (
+                  <tr key={idx}>
+                    <td>
+                      <div style={{ fontWeight: '700', fontSize: '12px' }}>{item.design || '#'}</div>
+                      <div style={{ fontSize: '10px', color: '#444' }}>{catText} {item.color ? `| ${item.color}` : ''} {item.size ? `| ${item.size}` : ''}</div>
+                    </td>
+                    <td>{item.qty}</td>
+                    <td>{item.price}</td>
+                    <td>{item.price * item.qty}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <div className="pb-total" style={{ flexDirection: 'column', gap: '4px' }}>

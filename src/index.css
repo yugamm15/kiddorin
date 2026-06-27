@@ -1151,6 +1151,7 @@ textarea:focus {
   .desktop-table,
   #barcode-page .card,
   .billing-layout,
+  #exchanges-page > *:not(#exchange-print-slip),
   #app.top-nav-layout::before,
   #app.top-nav-layout::after {
     display: none !important;
@@ -1187,7 +1188,8 @@ textarea:focus {
     /* Force the height so the barcode lines are visible */
   }
 
-  #print-bill {
+  #print-bill,
+  #exchange-print-slip {
     display: block !important;
   }
 
@@ -1243,7 +1245,8 @@ textarea:focus {
   }
 }
 
-#print-bill {
+#print-bill,
+#exchange-print-slip {
   display: none;
 }
 

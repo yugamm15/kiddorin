@@ -69,7 +69,7 @@ const Reports = () => {
     if (currentReport === 'sales' || currentReport === 'transactions') {
       rows.push(["Bill ID", "Total Amount", "Payment Method", "Date"]);
       bills.forEach(b => {
-        rows.push([b.id, b.total_amount, b.payment_method || 'N/A', new Date(b.created_at).toLocaleString('en-IN')]);
+        rows.push([b.id.slice(0, 8).toUpperCase(), b.total_amount, b.payment_method || 'N/A', new Date(b.created_at).toLocaleString('en-IN')]);
       });
     } else if (currentReport === 'stock') {
       rows.push(["Design Number", "Category", "Gender", "Color", "Size", "Quantity", "Selling Price", "Status"]);
@@ -238,7 +238,7 @@ const Reports = () => {
               <tbody>
                 {bills.map(b => (
                   <tr key={b.id}>
-                    <td><strong>{b.id}</strong></td>
+                    <td><strong>{b.id.slice(0, 8).toUpperCase()}</strong></td>
                     <td>₹{Number(b.total_amount).toLocaleString('en-IN')}</td>
                     <td><span className={`badge ${b.payment_method?.toLowerCase() === 'cash' ? 'badge-green' : 'badge-blue'}`}>{b.payment_method?.toUpperCase()}</span></td>
                     <td>{user?.branch?.name}</td>
