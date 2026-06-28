@@ -235,6 +235,8 @@ class SupabaseDB {
         branch_id: billData.branch_id,
         total_amount: billData.total_amount,
         payment_method: billData.payment_method,
+        split_cash: billData.split_cash || 0,
+        split_upi: billData.split_upi || 0,
         customer_name: billData.customer_name || 'Walk-in Customer',
         customer_phone: billData.customer_phone || null
       }])

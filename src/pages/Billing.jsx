@@ -8,6 +8,7 @@ const Billing = () => {
   const [barcode, setBarcode] = useState('');
   const [items, setItems] = useState([]);
   const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [splitCash, setSplitCash] = useState('');
   const [error, setError] = useState('');
   const [billGenerated, setBillGenerated] = useState(null);
   const [discountValue, setDiscountValue] = useState('');
@@ -115,12 +116,26 @@ const Billing = () => {
     }
     setError('');
     try {
+      if (paymentMethod === 'split' && finalAmount > 0) {
+        if (splitCash === '' || isNaN(splitCash) || parseFloat(splitCash) < 0 || parseFloat(splitCash) > finalAmount) {
+          toast.error(`Please enter a valid Cash amount between ₹0 and ₹${finalAmount} for split payment.`);
+          return;
+        }
+      }
+      const sCashAmt = paymentMethod === 'split' ? (parseFloat(splitCash) || 0) : (paymentMethod === 'cash' ? finalAmount : 0);
+      const sUpiAmt = paymentMethod === 'split' ? Math.max(0, finalAmount - sCashAmt) : (paymentMethod === 'upi' ? finalAmount : 0);
+      const payStr = finalAmount === 0 ? 'Store Credit' : (
+        paymentMethod === 'cash' ? 'Cash' : (paymentMethod === 'upi' ? 'UPI' : `Split (Cash: ₹${sCashAmt}, GPay: ₹${sUpiAmt})`)
+      );
+
       // Create a mapped array for db service
       const dbItems = items.map(i => ({ product_id: i.product_id, quantity: i.qty, price: i.price }));
       const newBill = await db.generateBill({
         branch_id: user.branch_id,
         total_amount: finalAmount,
-        payment_method: finalAmount === 0 ? 'Store Credit' : (paymentMethod === 'cash' ? 'Cash' : 'UPI'),
+        payment_method: payStr,
+        split_cash: sCashAmt,
+        split_upi: sUpiAmt,
         customer_name: customerName.trim() || 'Walk-in Customer',
         customer_phone: customerPhone.trim() || null
       }, dbItems);
@@ -138,7 +153,7 @@ const Billing = () => {
         discount: discountAmount,
         creditApplied: creditApplied,
         total: finalAmount,
-        payment: finalAmount === 0 ? 'Store Credit' : paymentMethod,
+        payment: payStr,
         customerName: customerName.trim() || 'Walk-in Customer',
         customerPhone: customerPhone.trim()
       });
@@ -158,6 +173,7 @@ const Billing = () => {
     setCustomerName('');
     setCustomerPhone('');
     setAvailableCredit(0);
+    setSplitCash('');
     setBillGenerated(null);
     setError('');
     if (barcodeInputRef.current) barcodeInputRef.current.focus();
@@ -344,9 +360,39 @@ const Billing = () => {
               </div>
               <div className={`pay-btn ${paymentMethod === 'upi' ? 'selected' : ''}`} onClick={() => setPaymentMethod('upi')}>
                 <span className="pay-icon">📱</span>
-                <span className="pay-label">UPI</span>
+                <span className="pay-label">GPay/UPI</span>
+              </div>
+              <div className={`pay-btn ${paymentMethod === 'split' ? 'selected' : ''}`} onClick={() => { setPaymentMethod('split'); setSplitCash(Math.round(finalAmount / 2).toString()); }}>
+                <span className="pay-icon">⚖️</span>
+                <span className="pay-label">Split</span>
               </div>
             </div>
+            {paymentMethod === 'split' && (
+              <div style={{ marginTop: '12px', marginBottom: '12px', padding: '12px', background: 'var(--off-white)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--dark)', marginBottom: '8px' }}>⚖️ Split Breakdown (Total: ₹{finalAmount})</div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>💵 Cash Amount</label>
+                    <input 
+                      type="number" 
+                      placeholder="₹ Cash..." 
+                      value={splitCash}
+                      onChange={e => setSplitCash(e.target.value)}
+                      style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border)', fontWeight: 'bold' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>📱 GPay / UPI</label>
+                    <input 
+                      type="number" 
+                      value={Math.max(0, finalAmount - (parseFloat(splitCash) || 0))}
+                      readOnly
+                      style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border)', background: '#e9ecef', fontWeight: 'bold', color: '#004085' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
             <button className="btn btn-success" style={{ width: '100%', padding: '14px', fontSize: '15px' }} onClick={confirmBill}>✓ Confirm & Generate Bill</button>
             <button className="btn btn-secondary" style={{ width: '100%', marginTop: '8px' }} onClick={clearBill}>Clear Bill</button>
           </div>
@@ -356,7 +402,7 @@ const Billing = () => {
               <div className="section-title">Bill Generated ✓</div>
               <div>
                 <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>Bill ID: <strong>{billGenerated.id.slice(0, 8).toUpperCase()}</strong> • {billGenerated.date}</div>
-                <div style={{ fontSize: '13px', marginBottom: '12px' }}>Items: {billGenerated.items.length} | Payment: <span className={`badge ${billGenerated.payment === 'cash' ? 'badge-green' : 'badge-blue'}`}>{billGenerated.payment.toUpperCase()}</span></div>
+                <div style={{ fontSize: '13px', marginBottom: '12px' }}>Items: {billGenerated.items.length} | Payment: <span className={`badge ${billGenerated.payment?.toLowerCase() === 'cash' ? 'badge-green' : (billGenerated.payment?.toLowerCase()?.startsWith('split') ? 'badge-secondary' : 'badge-blue')}`}>{billGenerated.payment.toUpperCase()}</span></div>
                 {billGenerated.discount > 0 && (
                   <div style={{ fontSize: '13px', color: 'var(--success)', marginBottom: '4px' }}>Discount Applied: ₹{billGenerated.discount.toLocaleString('en-IN')}</div>
                 )}

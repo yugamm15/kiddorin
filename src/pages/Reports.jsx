@@ -83,8 +83,18 @@ const Reports = () => {
         rows.push([p.design_number, p.category, p.color, p.size, p.quantity]);
       });
     } else if (currentReport === 'payment') {
-      const cash = bills.filter(b => b.payment_method?.toLowerCase() === 'cash').reduce((a, b) => a + Number(b.total_amount), 0);
-      const upi = bills.filter(b => b.payment_method?.toLowerCase() === 'upi').reduce((a, b) => a + Number(b.total_amount), 0);
+      const cash = bills.reduce((sum, b) => {
+        const pm = b.payment_method?.toLowerCase() || '';
+        if (pm === 'cash') return sum + Number(b.total_amount);
+        if (pm.startsWith('split')) return sum + Number(b.split_cash || 0);
+        return sum;
+      }, 0);
+      const upi = bills.reduce((sum, b) => {
+        const pm = b.payment_method?.toLowerCase() || '';
+        if (pm === 'upi') return sum + Number(b.total_amount);
+        if (pm.startsWith('split')) return sum + Number(b.split_upi || 0);
+        return sum;
+      }, 0);
       rows.push(["Payment Method", "Total Revenue"]);
       rows.push(["Cash", cash]);
       rows.push(["UPI", upi]);
@@ -213,8 +223,18 @@ const Reports = () => {
 
     if (currentReport === 'sales' || currentReport === 'transactions') {
       const total = bills.reduce((a, b) => a + Number(b.total_amount), 0);
-      const cash = bills.filter(b => b.payment_method?.toLowerCase() === 'cash').reduce((a, b) => a + Number(b.total_amount), 0);
-      const upi = bills.filter(b => b.payment_method?.toLowerCase() === 'upi').reduce((a, b) => a + Number(b.total_amount), 0);
+      const cash = bills.reduce((sum, b) => {
+        const pm = b.payment_method?.toLowerCase() || '';
+        if (pm === 'cash') return sum + Number(b.total_amount);
+        if (pm.startsWith('split')) return sum + Number(b.split_cash || 0);
+        return sum;
+      }, 0);
+      const upi = bills.reduce((sum, b) => {
+        const pm = b.payment_method?.toLowerCase() || '';
+        if (pm === 'upi') return sum + Number(b.total_amount);
+        if (pm.startsWith('split')) return sum + Number(b.split_upi || 0);
+        return sum;
+      }, 0);
       
       const salesByDate = bills.reduce((acc, bill) => {
         const date = new Date(bill.created_at).toLocaleDateString('en-IN');
@@ -240,7 +260,7 @@ const Reports = () => {
                   <tr key={b.id}>
                     <td><strong>{b.id.slice(0, 8).toUpperCase()}</strong></td>
                     <td>₹{Number(b.total_amount).toLocaleString('en-IN')}</td>
-                    <td><span className={`badge ${b.payment_method?.toLowerCase() === 'cash' ? 'badge-green' : 'badge-blue'}`}>{b.payment_method?.toUpperCase()}</span></td>
+                    <td><span className={`badge ${b.payment_method?.toLowerCase() === 'cash' ? 'badge-green' : (b.payment_method?.toLowerCase()?.startsWith('split') ? 'badge-secondary' : 'badge-blue')}`}>{b.payment_method?.toUpperCase()}</span></td>
                     <td>{user?.branch?.name}</td>
                     <td>{new Date(b.created_at).toLocaleString('en-IN')}</td>
                   </tr>
@@ -310,8 +330,18 @@ const Reports = () => {
     }
 
     if (currentReport === 'payment') {
-      const cash = bills.filter(b => b.payment_method?.toLowerCase() === 'cash').reduce((a, b) => a + Number(b.total_amount), 0);
-      const upi = bills.filter(b => b.payment_method?.toLowerCase() === 'upi').reduce((a, b) => a + Number(b.total_amount), 0);
+      const cash = bills.reduce((sum, b) => {
+        const pm = b.payment_method?.toLowerCase() || '';
+        if (pm === 'cash') return sum + Number(b.total_amount);
+        if (pm.startsWith('split')) return sum + Number(b.split_cash || 0);
+        return sum;
+      }, 0);
+      const upi = bills.reduce((sum, b) => {
+        const pm = b.payment_method?.toLowerCase() || '';
+        if (pm === 'upi') return sum + Number(b.total_amount);
+        if (pm.startsWith('split')) return sum + Number(b.split_upi || 0);
+        return sum;
+      }, 0);
       const chartData = [{ Method: 'Cash', Revenue: cash }, { Method: 'UPI', Revenue: upi }].filter(d => d.Revenue > 0);
       
       return (
