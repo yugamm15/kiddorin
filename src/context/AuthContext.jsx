@@ -34,7 +34,7 @@ export const AuthProvider = ({ children }) => {
       sessionStorage.setItem('kiddorin_user', JSON.stringify(userData));
       // Remove any lingering localStorage items
       localStorage.removeItem('kiddorin_user');
-      return { success: true };
+      return { success: true, userData };
     } catch (error) {
       return { success: false, error: error.message };
     }

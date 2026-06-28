@@ -14,6 +14,8 @@ import Branches from './pages/Branches';
 import Settings from './pages/Settings';
 import Dealers from './pages/Dealers';
 import Exchanges from './pages/Exchanges';
+import AdminLogin from './pages/AdminLogin';
+import Catalog from './pages/Catalog';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -28,6 +30,7 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/admin" element={<AdminLogin />} />
       
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
@@ -39,6 +42,7 @@ const AppRoutes = () => {
         <Route path="reports" element={<Reports />} />
         <Route path="branches" element={<Branches />} />
         <Route path="dealers" element={<Dealers />} />
+        <Route path="catalog" element={<Catalog />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

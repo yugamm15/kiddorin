@@ -513,6 +513,56 @@ class SupabaseDB {
       }
     }
   }
+
+  async getCategories() {
+    const defaultCategories = ['T-Shirt', 'Frock', 'Pant', 'Shirt', 'Jacket', 'Shorts', 'Dress', 'Top', 'Leggings', 'Dungaree', 'Night Suit'];
+    try {
+      const { data, error } = await supabase.from('categories').select('*').order('name');
+      if (error || !data || data.length === 0) {
+        return defaultCategories.map((c, i) => ({ id: `def-${i}`, name: c }));
+      }
+      return data;
+    } catch (e) {
+      return defaultCategories.map((c, i) => ({ id: `def-${i}`, name: c }));
+    }
+  }
+
+  async addCategory(name) {
+    const { data, error } = await supabase.from('categories').insert([{ name: name.trim() }]).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  async deleteCategory(id) {
+    if (String(id).startsWith('def-')) throw new Error("Please run the database upgrade query in Supabase first.");
+    const { error } = await supabase.from('categories').delete().eq('id', id);
+    if (error) throw error;
+  }
+
+  async getSizes() {
+    const defaultSizes = ['80', '90', '100', '110', '120', '130', '140', '150', '160', '170'];
+    try {
+      const { data, error } = await supabase.from('sizes').select('*').order('name');
+      if (error || !data || data.length === 0) {
+        return defaultSizes.map((s, i) => ({ id: `def-${i}`, name: s }));
+      }
+      return data;
+    } catch (e) {
+      return defaultSizes.map((s, i) => ({ id: `def-${i}`, name: s }));
+    }
+  }
+
+  async addSize(name) {
+    const { data, error } = await supabase.from('sizes').insert([{ name: name.trim() }]).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  async deleteSize(id) {
+    if (String(id).startsWith('def-')) throw new Error("Please run the database upgrade query in Supabase first.");
+    const { error } = await supabase.from('sizes').delete().eq('id', id);
+    if (error) throw error;
+  }
 }
 
 export const db = new SupabaseDB();

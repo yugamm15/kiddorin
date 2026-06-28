@@ -176,6 +176,42 @@ INSERT INTO branches (name, address, phone)
 VALUES ('Main Store', '123 Market St, Surat', '+91 9876543210')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO users (username, email, password, branch_id, role)
-SELECT 'admin', 'admin@kiddorin.com', 'password', id, 'admin' FROM branches WHERE name = 'Main Store' LIMIT 1
+ALTER TABLE users ALTER COLUMN id SET DEFAULT uuid_generate_v4();
+
+
+
+-- ==========================================
+-- SUPER ADMIN & CATALOG TABLES (V2 UPGRADE)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS categories (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sizes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(50) UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sizes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow authenticated staff access to categories" ON categories FOR ALL USING (true);
+CREATE POLICY "Allow authenticated staff access to sizes" ON sizes FOR ALL USING (true);
+
+INSERT INTO categories (name) VALUES 
+('T-Shirt'), ('Frock'), ('Pant'), ('Shirt'), ('Jacket'), ('Shorts'), ('Dress'), ('Top'), ('Leggings'), ('Dungaree'), ('Night Suit')
 ON CONFLICT DO NOTHING;
+
+INSERT INTO sizes (name) VALUES 
+('80'), ('90'), ('100'), ('110'), ('120'), ('130'), ('140'), ('150'), ('160'), ('170')
+ON CONFLICT DO NOTHING;
+
+-- Ensure default id generation is set and remove auth foreign key constraint for custom staff logins
+ALTER TABLE users ALTER COLUMN id SET DEFAULT uuid_generate_v4();
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_id_fkey;
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_auth_id_fkey;
+
+

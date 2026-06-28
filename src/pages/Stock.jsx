@@ -3,13 +3,15 @@ import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
 import toast from 'react-hot-toast';
 
-const CATEGORIES = ['T-Shirt', 'Frock', 'Pant', 'Shirt', 'Jacket', 'Shorts', 'Dress', 'Top', 'Leggings', 'Dungaree', 'Night Suit'];
-const SIZES = ['80', '90', '100', '110', '120', '130', '140', '150', '160', '170'];
+const DEFAULT_CATEGORIES = ['T-Shirt', 'Frock', 'Pant', 'Shirt', 'Jacket', 'Shorts', 'Dress', 'Top', 'Leggings', 'Dungaree', 'Night Suit'];
+const DEFAULT_SIZES = ['80', '90', '100', '110', '120', '130', '140', '150', '160', '170'];
 
 const Stock = () => {
   const { user } = useAuth();
   const [success, setSuccess] = useState(false);
   const [dealers, setDealers] = useState([]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [sizes, setSizes] = useState(DEFAULT_SIZES);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
   
@@ -31,6 +33,8 @@ const Stock = () => {
 
   useEffect(() => {
     db.getDealers().then(setDealers);
+    db.getCategories().then(data => setCategories(data.map(c => c.name)));
+    db.getSizes().then(data => setSizes(data.map(s => s.name)));
   }, []);
 
   const handleChange = (e) => {
@@ -296,7 +300,7 @@ const Stock = () => {
             <label>Category</label>
             <select id="s-category" value={formData.category} onChange={handleChange}>
               <option value="">Select category</option>
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           
@@ -318,7 +322,7 @@ const Stock = () => {
           <div className="form-group full">
             <label>Sizes (Select Multiple)</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
-              {SIZES.map(s => (
+              {sizes.map(s => (
                 <div 
                   key={s} 
                   onClick={() => toggleSize(s)}

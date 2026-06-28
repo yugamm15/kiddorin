@@ -23,12 +23,16 @@ const Dashboard = () => {
         ))}
       </div>
       
-      <div className="skeleton skeleton-title" style={{ width: '250px', marginTop: '32px' }}></div>
-      <div className="table-wrap">
-        {[...Array(5)].map((_, i) => (
-          <div className="skeleton skeleton-table-row" key={i} style={{ borderBottom: '1px solid var(--border)' }}></div>
-        ))}
-      </div>
+      {user?.role !== 'superadmin' && (
+        <>
+          <div className="skeleton skeleton-title" style={{ width: '250px', marginTop: '32px' }}></div>
+          <div className="table-wrap">
+            {[...Array(5)].map((_, i) => (
+              <div className="skeleton skeleton-table-row" key={i} style={{ borderBottom: '1px solid var(--border)' }}></div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 
@@ -95,38 +99,42 @@ const Dashboard = () => {
         </div>
       </div>
       
-      <div className="recent-title">Recent Transactions</div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Bill #</th>
-              <th>Total</th>
-              <th>Payment</th>
-              <th>Branch</th>
-              <th>Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats.recentTransactions.map(b => (
-              <tr key={b.id}>
-                <td><strong>{b.id}</strong></td>
-                <td><strong>₹{b.total_amount.toLocaleString('en-IN')}</strong></td>
-                <td>
-                  <span className={`badge ${b.payment_method === 'Cash' ? 'badge-green' : 'badge-blue'}`}>
-                    {b.payment_method.toUpperCase()}
-                  </span>
-                </td>
-                <td>{user.branch.name}</td>
-                <td>{new Date(b.created_at).toLocaleString('en-IN')}</td>
-              </tr>
-            ))}
-            {stats.recentTransactions.length === 0 && (
-               <tr><td colSpan="5" style={{ textAlign: 'center', color: '#aaa', padding: '24px' }}>No recent transactions</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {user?.role !== 'superadmin' && (
+        <>
+          <div className="recent-title">Recent Transactions</div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Bill #</th>
+                  <th>Total</th>
+                  <th>Payment</th>
+                  <th>Branch</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.recentTransactions.map(b => (
+                  <tr key={b.id}>
+                    <td><strong>{b.id}</strong></td>
+                    <td><strong>₹{b.total_amount.toLocaleString('en-IN')}</strong></td>
+                    <td>
+                      <span className={`badge ${b.payment_method === 'Cash' ? 'badge-green' : 'badge-blue'}`}>
+                        {b.payment_method.toUpperCase()}
+                      </span>
+                    </td>
+                    <td>{user.branch.name}</td>
+                    <td>{new Date(b.created_at).toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+                {stats.recentTransactions.length === 0 && (
+                   <tr><td colSpan="5" style={{ textAlign: 'center', color: '#aaa', padding: '24px' }}>No recent transactions</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 };
