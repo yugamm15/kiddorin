@@ -27,6 +27,7 @@ const Exchanges = () => {
   const [completedExchange, setCompletedExchange] = useState(null);
   const [branchReturns, setBranchReturns] = useState([]);
   const [viewingReturnHistory, setViewingReturnHistory] = useState(null);
+  const [viewingBillPreview, setViewingBillPreview] = useState(null);
 
   useEffect(() => {
     if (user?.branch_id) {
@@ -66,6 +67,49 @@ const Exchanges = () => {
     setReturnedItem(firstItem || null);
     setExchangedItem(null);
     setExchangeBarcode('');
+  };
+
+  const handleViewBill = (bill, billRets) => {
+    if (billRets && billRets.length > 0) {
+      const latestRet = billRets[0];
+      const bItems = bill.bill_items || [];
+      const matchItem = bItems.find(bi => bi.product_id === latestRet.returned_product_id || bi.products?.id === latestRet.returned_product_id) || bItems[0];
+
+      setViewingBillPreview({
+        type: 'return',
+        id: latestRet.id || 'RET-' + bill.id,
+        date: new Date(latestRet.created_at).toLocaleString('en-IN'),
+        customerName: latestRet.customer_name || bill.customer_name || 'Walk-in Customer',
+        customerPhone: latestRet.customer_phone || bill.customer_phone || '',
+        returnedItem: {
+          products: matchItem?.products || { category: 'Product', size: '' },
+          price_at_sale: matchItem?.price_at_sale || 0
+        },
+        returnReason: latestRet.return_reason || 'Return',
+        exchangedItem: latestRet.exchanged_product || null,
+        netAmount: Number(latestRet.net_amount || 0),
+        paymentMethod: latestRet.payment_method || 'Store Credit Note'
+      });
+    } else {
+      setViewingBillPreview({
+        type: 'sale',
+        id: bill.id,
+        date: new Date(bill.created_at).toLocaleString('en-IN'),
+        customerName: bill.customer_name || 'Walk-in Customer',
+        customerPhone: bill.customer_phone || '',
+        payment: bill.payment_method || 'Cash',
+        total: Number(bill.total_amount || 0),
+        items: (bill.bill_items || []).map(bi => ({
+          category: bi.products?.category || 'Item',
+          name: bi.products?.category || 'Item',
+          design: bi.products?.design_number || '',
+          size: bi.products?.size || '',
+          color: bi.products?.color || '',
+          price: Number(bi.price_at_sale || 0),
+          qty: bi.quantity
+        }))
+      });
+    }
   };
 
   const handleScanNewItem = async () => {
@@ -206,13 +250,22 @@ const Exchanges = () => {
                           )}
                         </td>
                         <td>
-                          {billRets.length > 0 ? (
-                            <span style={{ fontSize: '11px', color: '#999', fontStyle: 'italic' }}>🔒 Return Completed</span>
-                          ) : (
-                            <button className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '11px' }} onClick={() => selectBillForReturn(bill)}>
-                              🔄 Return / Exchange
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <button 
+                              className="btn btn-secondary" 
+                              style={{ padding: '6px 12px', fontSize: '11px' }} 
+                              onClick={() => handleViewBill(bill, billRets)}
+                            >
+                              👁️ View Bill
                             </button>
-                          )}
+                            {billRets.length > 0 ? (
+                              <span style={{ fontSize: '11px', color: '#999', fontStyle: 'italic' }}>🔒 Return Completed</span>
+                            ) : (
+                              <button className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '11px' }} onClick={() => selectBillForReturn(bill)}>
+                                🔄 Return / Exchange
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -492,64 +545,282 @@ const Exchanges = () => {
         </div>
       )}
 
-      {/* Hidden Thermal Print Exchange Slip Component */}
-      {completedExchange && (
-        <div id="exchange-print-slip" className="print-bill-container">
-          <div className="pb-header">
-            <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '180px', maxHeight: '65px', objectFit: 'contain', display: 'block', margin: '0 auto 12px auto' }} />
-            <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '12px' }}>
-              G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009
+      {/* BILL PREVIEW MODAL */}
+      {viewingBillPreview && (
+        <div style={{ position: 'fixed', top:0, left:0, right:0, bottom:0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="card" style={{ width: '420px', maxWidth: '95%', margin: 0, padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
+            {viewingBillPreview.type === 'sale' ? (
+              <div className="exchange-slip-preview" style={{ fontFamily: 'Montserrat, sans-serif', color: '#000' }}>
+                <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '12px', marginBottom: '12px' }}>
+                  <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '160px', maxHeight: '55px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} />
+                  <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '8px', color: '#444' }}>
+                    G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009
+                  </div>
+                  <div style={{ fontSize: '10px', fontWeight: '600', marginBottom: '8px' }}>
+                    +91 94283 96273 | +91 94276 56615
+                  </div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', borderTop: '1px dashed #000', paddingTop: '8px' }}>Original Sale Bill</div>
+                  <div style={{ fontSize: '11px', marginTop: '4px' }}>Bill No: {viewingBillPreview.id.slice(0, 8).toUpperCase()}</div>
+                  <div style={{ fontSize: '10px', color: '#555' }}>Date: {viewingBillPreview.date}</div>
+                </div>
+
+                <div style={{ fontSize: '12px', marginBottom: '12px' }}>
+                  <strong>Customer:</strong> {viewingBillPreview.customerName} {viewingBillPreview.customerPhone ? `(${viewingBillPreview.customerPhone})` : ''}<br/>
+                  <strong>Payment:</strong> {viewingBillPreview.payment.toUpperCase()}
+                </div>
+
+                <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', marginBottom: '12px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #000', borderTop: '1px solid #000' }}>
+                      <th style={{ textAlign: 'left', padding: '6px 0' }}>Item</th>
+                      <th style={{ textAlign: 'center', padding: '6px 0' }}>Qty</th>
+                      <th style={{ textAlign: 'right', padding: '6px 0' }}>Price</th>
+                      <th style={{ textAlign: 'right', padding: '6px 0' }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewingBillPreview.items.map((item, idx) => {
+                      let catText = item.category || item.name || '';
+                      if (item.color) {
+                        const regColor = new RegExp(`\\b${item.color}\\b`, 'gi');
+                        catText = catText.replace(regColor, '').trim();
+                      }
+                      if (item.size) {
+                        const regSize = new RegExp(`\\b${item.size}\\b`, 'gi');
+                        catText = catText.replace(regSize, '').trim();
+                      }
+                      catText = catText.replace(/\s+/g, ' ').replace(/[|-]\s*$/, '').trim() || item.category || item.name;
+
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px dashed #eee' }}>
+                          <td style={{ padding: '6px 0' }}>
+                            <div style={{ fontWeight: '700' }}>{item.design || '#'}</div>
+                            <div style={{ fontSize: '10px', color: '#555' }}>{catText} {item.color ? `| ${item.color}` : ''} {item.size ? `| ${item.size}` : ''}</div>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>{item.qty}</td>
+                          <td style={{ textAlign: 'right' }}>₹{item.price}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600 }}>₹{item.price * item.qty}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <div style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '8px 0', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginBottom: '16px' }}>
+                  <span>Total Amount:</span>
+                  <span>₹{viewingBillPreview.total.toLocaleString('en-IN')}</span>
+                </div>
+
+                <div style={{ textAlign: 'center', fontSize: '9px', color: '#666' }}>
+                  Thank you for shopping with us!<br/>No Return | No Exchange
+                  <div style={{ marginTop: '4px', fontWeight: '600', color: '#000' }}>Follow us on Instagram @Kiddorin</div>
+                </div>
+              </div>
+            ) : (
+              <div className="exchange-slip-preview" style={{ fontFamily: 'Montserrat, sans-serif', color: '#000' }}>
+                <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '12px', marginBottom: '12px' }}>
+                  <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '160px', maxHeight: '55px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} />
+                  <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '8px', color: '#444' }}>
+                    G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009
+                  </div>
+                  <div style={{ fontSize: '10px', fontWeight: '600', marginBottom: '8px' }}>
+                    +91 94283 96273 | +91 94276 56615
+                  </div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', borderTop: '1px dashed #000', paddingTop: '8px' }}>{viewingBillPreview.netAmount < 0 ? 'Store Credit Note (Voucher)' : 'Customer Exchange Note'}</div>
+                  <div style={{ fontSize: '11px', marginTop: '4px' }}>Slip No: {viewingBillPreview.id.slice(0, 8).toUpperCase()}</div>
+                  <div style={{ fontSize: '10px', color: '#555' }}>Date: {viewingBillPreview.date}</div>
+                </div>
+
+                <div style={{ fontSize: '12px', marginBottom: '12px' }}>
+                  <strong>Customer:</strong> {viewingBillPreview.customerName} {viewingBillPreview.customerPhone ? `(${viewingBillPreview.customerPhone})` : ''}
+                </div>
+
+                <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', marginBottom: '12px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #000' }}>
+                      <th style={{ textAlign: 'left', padding: '4px 0' }}>Description</th>
+                      <th style={{ textAlign: 'right', padding: '4px 0' }}>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                        <div style={{ fontWeight: 700 }}>RETURNED</div>
+                        <div>{viewingBillPreview.returnedItem?.products?.category} ({viewingBillPreview.returnedItem?.products?.size})</div>
+                        <div style={{ fontSize: '9px', color: '#666' }}>Reason: {viewingBillPreview.returnReason}</div>
+                      </td>
+                      <td style={{ textAlign: 'right', color: '#e74c3c' }}>-₹{viewingBillPreview.returnedItem?.price_at_sale}</td>
+                    </tr>
+                    {viewingBillPreview.exchangedItem && (
+                      <tr>
+                        <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                          <div style={{ fontWeight: 700 }}>ISSUED</div>
+                          <div>{viewingBillPreview.exchangedItem.category} ({viewingBillPreview.exchangedItem.size})</div>
+                        </td>
+                        <td style={{ textAlign: 'right', color: '#27ae60' }}>+₹{viewingBillPreview.exchangedItem.selling_price}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+
+                <div style={{ borderTop: '1px solid #000', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginBottom: '16px' }}>
+                  <span>Net Settled:</span>
+                  <span>{viewingBillPreview.netAmount > 0 ? `Paid ₹${viewingBillPreview.netAmount} (${viewingBillPreview.paymentMethod})` : `Credit ₹${Math.abs(viewingBillPreview.netAmount)}`}</span>
+                </div>
+
+                <div style={{ textAlign: 'center', fontSize: '9px', color: '#666' }}>
+                  Thank you for shopping with Kiddorin!<br/>Exchanged goods are non-refundable.
+                  <div style={{ marginTop: '4px', fontWeight: '600', color: '#000' }}>Follow us on Instagram @Kiddorin</div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { toast.dismiss(); window.print(); }}>🖨️ Print Receipt</button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setViewingBillPreview(null)}>Close</button>
             </div>
-            <div style={{ fontSize: '10px', fontWeight: '600', marginBottom: '8px' }}>
-              +91 94283 96273 | +91 94276 56615
-            </div>
-            <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', borderTop: '1px dashed #000', paddingTop: '8px' }}>
-              {completedExchange.netAmount < 0 ? 'Store Credit Note (Voucher)' : 'Customer Exchange Note'}
-            </div>
-          </div>
-          <div className="pb-details">
-            <div><strong>Date:</strong> {completedExchange.date}</div>
-            <div><strong>Slip No:</strong> {completedExchange.id.slice(0, 8).toUpperCase()}</div>
-            <div><strong>Customer:</strong> {completedExchange.customerName} {completedExchange.customerPhone ? `(${completedExchange.customerPhone})` : ''}</div>
-          </div>
-          <table className="pb-table">
-            <thead>
-              <tr>
-                <th>Description</th>
-                <th style={{ textAlign: 'right' }}>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                  <div style={{ fontWeight: 700 }}>RETURNED</div>
-                  <div>{completedExchange.returnedItem?.products?.category} ({completedExchange.returnedItem?.products?.size})</div>
-                  <div style={{ fontSize: '9px', color: '#444' }}>Reason: {completedExchange.returnReason}</div>
-                </td>
-                <td style={{ textAlign: 'right' }}>-₹{completedExchange.returnedItem?.price_at_sale}</td>
-              </tr>
-              {completedExchange.exchangedItem && (
-                <tr>
-                  <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                    <div style={{ fontWeight: 700 }}>ISSUED</div>
-                    <div>{completedExchange.exchangedItem.category} ({completedExchange.exchangedItem.size})</div>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>+₹{completedExchange.exchangedItem.selling_price}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          <div className="pb-total">
-            <span>Net Settled:</span>
-            <span>{completedExchange.netAmount > 0 ? `Paid ₹${completedExchange.netAmount} (${completedExchange.paymentMethod})` : `Credit ₹${Math.abs(completedExchange.netAmount)}`}</span>
-          </div>
-          <div className="pb-footer">
-            <div>Thank you for shopping with Kiddorin!</div>
-            <div>Exchanged goods are non-refundable.</div>
-            <div style={{ marginTop: '4px', fontWeight: '600' }}>Follow us on Instagram @Kiddorin</div>
           </div>
         </div>
       )}
+
+      {/* Hidden Thermal Print Slip Component */}
+      {(completedExchange || viewingBillPreview) && (() => {
+        const printData = completedExchange ? {
+          type: 'return',
+          ...completedExchange
+        } : viewingBillPreview;
+
+        if (printData.type === 'sale') {
+          return (
+            <div id="exchange-print-slip" className="print-bill-container">
+              <div className="pb-header">
+                <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '180px', maxHeight: '65px', objectFit: 'contain', display: 'block', margin: '0 auto 12px auto' }} />
+                <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '12px' }}>
+                  G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009
+                </div>
+                <div style={{ fontSize: '10px', fontWeight: '600' }}>
+                  +91 94283 96273 | +91 94276 56615
+                </div>
+              </div>
+              <div className="pb-details">
+                <div><strong>Date:</strong> {printData.date}</div>
+                <div><strong>Bill No:</strong> {printData.id.slice(0, 8).toUpperCase()}</div>
+                {printData.customerPhone ? (
+                  <div><strong>Customer:</strong> {printData.customerName} ({printData.customerPhone})</div>
+                ) : (
+                  <div><strong>Customer:</strong> {printData.customerName}</div>
+                )}
+                <div><strong>Payment:</strong> {printData.payment.toUpperCase()}</div>
+              </div>
+              <table className="pb-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Price</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {printData.items.map((item, idx) => {
+                    let catText = item.category || item.name || '';
+                    if (item.color) {
+                      const regColor = new RegExp(`\\b${item.color}\\b`, 'gi');
+                      catText = catText.replace(regColor, '').trim();
+                    }
+                    if (item.size) {
+                      const regSize = new RegExp(`\\b${item.size}\\b`, 'gi');
+                      catText = catText.replace(regSize, '').trim();
+                    }
+                    catText = catText.replace(/\s+/g, ' ').replace(/[|-]\s*$/, '').trim() || item.category || item.name;
+
+                    return (
+                      <tr key={idx}>
+                        <td>
+                          <div style={{ fontWeight: '700', fontSize: '12px' }}>{item.design || '#'}</div>
+                          <div style={{ fontSize: '10px', color: '#444' }}>{catText} {item.color ? `| ${item.color}` : ''} {item.size ? `| ${item.size}` : ''}</div>
+                        </td>
+                        <td>{item.qty}</td>
+                        <td>{item.price}</td>
+                        <td>{item.price * item.qty}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div className="pb-total" style={{ flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                  <span>Total Amount:</span>
+                  <span>₹{printData.total.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+              <div className="pb-footer">
+                <div>Thank you for shopping with us!</div>
+                <div>No Return | No Exchange</div>
+                <div style={{ marginTop: '4px', fontWeight: '600' }}>Follow us on Instagram @Kiddorin</div>
+              </div>
+            </div>
+          );
+        } else {
+          return (
+            <div id="exchange-print-slip" className="print-bill-container">
+              <div className="pb-header">
+                <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '180px', maxHeight: '65px', objectFit: 'contain', display: 'block', margin: '0 auto 12px auto' }} />
+                <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '12px' }}>
+                  G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009
+                </div>
+                <div style={{ fontSize: '10px', fontWeight: '600', marginBottom: '8px' }}>
+                  +91 94283 96273 | +91 94276 56615
+                </div>
+                <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', borderTop: '1px dashed #000', paddingTop: '8px' }}>
+                  {printData.netAmount < 0 ? 'Store Credit Note (Voucher)' : 'Customer Exchange Note'}
+                </div>
+              </div>
+              <div className="pb-details">
+                <div><strong>Date:</strong> {printData.date}</div>
+                <div><strong>Slip No:</strong> {printData.id.slice(0, 8).toUpperCase()}</div>
+                <div><strong>Customer:</strong> {printData.customerName} {printData.customerPhone ? `(${printData.customerPhone})` : ''}</div>
+              </div>
+              <table className="pb-table">
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th style={{ textAlign: 'right' }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                      <div style={{ fontWeight: 700 }}>RETURNED</div>
+                      <div>{printData.returnedItem?.products?.category} ({printData.returnedItem?.products?.size})</div>
+                      <div style={{ fontSize: '9px', color: '#444' }}>Reason: {printData.returnReason}</div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>-₹{printData.returnedItem?.price_at_sale}</td>
+                  </tr>
+                  {printData.exchangedItem && (
+                    <tr>
+                      <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                        <div style={{ fontWeight: 700 }}>ISSUED</div>
+                        <div>{printData.exchangedItem.category} ({printData.exchangedItem.size})</div>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>+₹{printData.exchangedItem.selling_price}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+              <div className="pb-total">
+                <span>Net Settled:</span>
+                <span>{printData.netAmount > 0 ? `Paid ₹${printData.netAmount} (${printData.paymentMethod})` : `Credit ₹${Math.abs(printData.netAmount)}`}</span>
+              </div>
+              <div className="pb-footer">
+                <div>Thank you for shopping with Kiddorin!</div>
+                <div>Exchanged goods are non-refundable.</div>
+                <div style={{ marginTop: '4px', fontWeight: '600' }}>Follow us on Instagram @Kiddorin</div>
+              </div>
+            </div>
+          );
+        }
+      })()}
     </div>
   );
 };

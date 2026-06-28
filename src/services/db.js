@@ -402,8 +402,20 @@ class SupabaseDB {
       .select('*')
       .eq('branch_id', branch_id)
       .order('created_at', { ascending: false });
-    if (error) return [];
-    return data || [];
+    if (error || !data) return [];
+
+    const exIds = [...new Set(data.map(r => r.exchanged_product_id).filter(Boolean))];
+    if (exIds.length > 0) {
+      const { data: prods } = await supabase.from('products').select('*').in('id', exIds);
+      if (prods) {
+        const prodMap = {};
+        prods.forEach(p => prodMap[p.id] = p);
+        data.forEach(r => {
+          if (r.exchanged_product_id) r.exchanged_product = prodMap[r.exchanged_product_id];
+        });
+      }
+    }
+    return data;
   }
 
   async processExchange(exchangeData) {
