@@ -119,6 +119,18 @@ CREATE TABLE IF NOT EXISTS customer_credits (
     UNIQUE(branch_id, customer_phone)
 );
 
+-- 10. Create Shop Expenses Table (Petty Cash / Daily Outflows)
+CREATE TABLE IF NOT EXISTS shop_expenses (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    branch_id UUID REFERENCES branches(id) ON DELETE CASCADE,
+    amount DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    category VARCHAR(100) NOT NULL DEFAULT 'Other',
+    description TEXT NOT NULL,
+    payment_method VARCHAR(50) NOT NULL DEFAULT 'Cash',
+    expense_date DATE DEFAULT CURRENT_DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 
 -- ==========================================
 -- SECURITY HARDENING: ROW LEVEL SECURITY (RLS)
@@ -132,6 +144,7 @@ ALTER TABLE bill_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE returns_exchanges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customer_credits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shop_expenses ENABLE ROW LEVEL SECURITY;
 
 -- Create Policies (Idempotent approach: drop if exists then create)
 DO $$ 
@@ -145,6 +158,7 @@ BEGIN
     DROP POLICY IF EXISTS "Allow authenticated staff access to purchases" ON purchases;
     DROP POLICY IF EXISTS "Allow authenticated staff access to returns_exchanges" ON returns_exchanges;
     DROP POLICY IF EXISTS "Allow authenticated staff access to customer_credits" ON customer_credits;
+    DROP POLICY IF EXISTS "Allow authenticated staff access to shop_expenses" ON shop_expenses;
 EXCEPTION
     WHEN OTHERS THEN NULL;
 END $$;
@@ -158,6 +172,7 @@ CREATE POLICY "Allow authenticated staff access to bill_items" ON bill_items FOR
 CREATE POLICY "Allow authenticated staff access to purchases" ON purchases FOR ALL USING (true);
 CREATE POLICY "Allow authenticated staff access to returns_exchanges" ON returns_exchanges FOR ALL USING (true);
 CREATE POLICY "Allow authenticated staff access to customer_credits" ON customer_credits FOR ALL USING (true);
+CREATE POLICY "Allow authenticated staff access to shop_expenses" ON shop_expenses FOR ALL USING (true);
 
 
 -- ==========================================
@@ -167,6 +182,7 @@ CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_products_branch ON products(branch_id);
 CREATE INDEX IF NOT EXISTS idx_bills_branch_date ON bills(branch_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_customer_credits_phone ON customer_credits(customer_phone);
+CREATE INDEX IF NOT EXISTS idx_shop_expenses_branch_date ON shop_expenses(branch_id, expense_date);
 
 
 -- ==========================================

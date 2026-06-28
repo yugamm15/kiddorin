@@ -563,6 +563,46 @@ class SupabaseDB {
     const { error } = await supabase.from('sizes').delete().eq('id', id);
     if (error) throw error;
   }
+
+  async getExpenses(branch_id = null) {
+    try {
+      let query = supabase.from('shop_expenses').select('*').order('expense_date', { ascending: false }).order('created_at', { ascending: false });
+      if (branch_id && branch_id !== 'all') {
+        query = query.eq('branch_id', branch_id);
+      }
+      const { data, error } = await query;
+      if (error) {
+        console.warn("Error fetching shop_expenses (table might need creation in Supabase):", error.message);
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.warn("Exception in getExpenses:", err);
+      return [];
+    }
+  }
+
+  async addExpense(expenseData) {
+    const { data, error } = await supabase
+      .from('shop_expenses')
+      .insert([{
+        branch_id: expenseData.branch_id,
+        amount: parseFloat(expenseData.amount),
+        category: expenseData.category || 'Other',
+        description: expenseData.description,
+        payment_method: expenseData.payment_method || 'Cash',
+        expense_date: expenseData.expense_date || new Date().toISOString().split('T')[0]
+      }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async deleteExpense(id) {
+    const { error } = await supabase.from('shop_expenses').delete().eq('id', id);
+    if (error) throw error;
+  }
 }
 
 export const db = new SupabaseDB();

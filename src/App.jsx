@@ -16,6 +16,7 @@ import Dealers from './pages/Dealers';
 import Exchanges from './pages/Exchanges';
 import AdminLogin from './pages/AdminLogin';
 import Catalog from './pages/Catalog';
+import Expenses from './pages/Expenses';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -43,6 +44,7 @@ const AppRoutes = () => {
         <Route path="branches" element={<Branches />} />
         <Route path="dealers" element={<Dealers />} />
         <Route path="catalog" element={<Catalog />} />
+        <Route path="expenses" element={<Expenses />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

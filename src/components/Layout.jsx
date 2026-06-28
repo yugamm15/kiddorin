@@ -26,6 +26,7 @@ const Layout = () => {
     { path: '/branches', name: 'Branches', icon: null },
     { path: '/dealers', name: 'Dealers', icon: null },
     { path: '/catalog', name: 'Catalog (Cat & Size)', icon: null },
+    { path: '/expenses', name: 'Expenses', icon: null },
     { path: '/reports', name: 'Reports', icon: null },
   ];
 
