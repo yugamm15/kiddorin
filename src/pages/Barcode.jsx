@@ -60,15 +60,21 @@ const BarcodePage = () => {
         const elem = document.getElementById(`barsvg-${s.id}`);
         if (!elem) return;
         const isSticker = printPaperSize !== 'a4';
-        const barW = printPaperSize === '1.5x2' ? 1.15 : (printPaperSize === '2x1.5' ? 1.35 : 1.5);
-        const barH = printPaperSize === '1.5x2' ? 42 : (printPaperSize === '2x1.5' ? 34 : 50);
+        // Use clean bar widths and ensure safe quiet zone margins (8px min) so scanners never clip start/stop bars
+        const barW = printPaperSize === 'a4' ? 1.5 : (s.barcode.length > 12 ? 1.2 : 1.4);
+        const barH = printPaperSize === '1.5x2' ? 40 : (printPaperSize === '2x1.5' ? 32 : 50);
         JsBarcode(elem, s.barcode, {
           format: 'CODE128', 
           width: barW, 
           height: barH, 
           displayValue: false, 
-          margin: isSticker ? 2 : 4
+          margin: isSticker ? 8 : 10,
+          background: '#ffffff',
+          lineColor: '#000000'
         });
+        elem.style.maxWidth = '94%';
+        elem.style.height = 'auto';
+        elem.style.shapeRendering = 'crispEdges';
       } catch(e) {}
     });
   }, [selectedIds, products, printPaperSize]);
@@ -224,6 +230,11 @@ const BarcodePage = () => {
               page-break-inside: avoid !important;
               box-sizing: border-box !important;
               overflow: hidden !important;
+            }
+            #print-bill.barcode-grid .barcode-card svg {
+              max-width: 94% !important;
+              height: auto !important;
+              shape-rendering: crispEdges !important;
             }
           }
         `}</style>

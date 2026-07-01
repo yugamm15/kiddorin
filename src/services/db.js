@@ -214,14 +214,30 @@ class SupabaseDB {
   }
 
   async getProductByBarcode(barcode, branch_id) {
-    const { data, error } = await supabase
+    // Hardware scanners often append carriage returns (\r), newlines (\n), or whitespace
+    const cleanBarcode = (barcode || '').replace(/[\r\n\t]/g, '').trim().toUpperCase();
+    
+    let { data, error } = await supabase
       .from('products')
       .select('*')
-      .eq('barcode', barcode)
+      .ilike('barcode', cleanBarcode)
       .eq('branch_id', branch_id)
       .eq('is_active', true)
-      .single();
+      .maybeSingle();
       
+    // Fallback: try exact match if ilike didn't hit
+    if (!data && !error) {
+      const res = await supabase
+        .from('products')
+        .select('*')
+        .eq('barcode', cleanBarcode)
+        .eq('branch_id', branch_id)
+        .eq('is_active', true)
+        .maybeSingle();
+      data = res.data;
+      error = res.error;
+    }
+
     if (error || !data) throw new Error("Product not found or out of stock");
     if (data.quantity <= 0) throw new Error(`Product Out of Stock! (Available: 0)`);
     return data;
