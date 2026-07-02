@@ -1184,9 +1184,12 @@ textarea:focus {
   }
 
   .barcode-grid {
-    display: block !important;
-    margin: 10px !important;
-    text-align: left !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    text-align: center !important;
     color: #000000 !important;
   }
 
@@ -1195,16 +1198,20 @@ textarea:focus {
   }
 
   .barcode-card {
-    display: inline-flex !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
     width: 31% !important;
     /* Fits exactly 3 per row on A4 */
     margin: 1% !important;
-    padding: 16px !important;
-    /* Smaller padding to shrink size */
+    padding: 12px 6px !important;
     box-sizing: border-box !important;
     vertical-align: top !important;
     transform: none !important;
     page-break-inside: avoid;
+    break-inside: avoid;
     border: 1px dashed #000000 !important;
     color: #000000 !important;
   }

@@ -205,17 +205,21 @@ const BarcodePage = () => {
               margin: 0;
             }
             html, body, #app, #app.top-nav-layout, .main-content {
-              margin: 0 !important;
+              margin: 0 auto !important;
               padding: 0 !important;
               min-height: 0 !important;
               height: auto !important;
-              width: ${printPaperSize === '1.5x2' ? '1.5in' : '2in'} !important;
+              width: 100% !important;
+              text-align: center !important;
             }
             #print-bill.barcode-grid {
-              display: block !important;
-              margin: 0 !important;
+              display: flex !important;
+              flex-direction: column !important;
+              align-items: center !important;
+              justify-content: center !important;
+              margin: 0 auto !important;
               padding: 0 !important;
-              width: ${printPaperSize === '1.5x2' ? '1.5in' : '2in'} !important;
+              width: 100% !important;
             }
             #print-bill.barcode-grid * {
               color: #000000 !important;
@@ -227,7 +231,7 @@ const BarcodePage = () => {
               justify-content: center !important;
               width: ${printPaperSize === '1.5x2' ? '1.5in' : '2in'} !important;
               height: ${printPaperSize === '1.5x2' ? '2in' : '1.5in'} !important;
-              margin: 0 !important;
+              margin: 0 auto !important;
               padding: 4px 2px !important;
               border: none !important;
               box-shadow: none !important;
