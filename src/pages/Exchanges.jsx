@@ -112,24 +112,10 @@ const Exchanges = () => {
     }
   };
 
-  const handleDeleteBill = async (bill) => {
-    if (window.confirm(`Are you sure you want to delete Bill #${bill.id.slice(0, 8).toUpperCase()} made by mistake? This will delete the record and restore all item quantities back into inventory stock.`)) {
-      const toastId = toast.loading('Deleting bill & restoring inventory stock...');
-      try {
-        await db.deleteBill(bill.id);
-        toast.success('Bill deleted and stock restored!', { id: toastId });
-        loadBills();
-      } catch (err) {
-        toast.error('Failed to delete bill: ' + err.message, { id: toastId });
-      }
-    }
-  };
-
-  const handleScanNewItem = async (overrideVal) => {
-    const valToScan = typeof overrideVal === 'string' ? overrideVal : exchangeBarcode;
-    if (!valToScan || !valToScan.trim()) return;
+  const handleScanNewItem = async () => {
+    if (!exchangeBarcode.trim()) return;
     try {
-      const prod = await db.getProductByBarcode(valToScan.trim(), user.branch_id);
+      const prod = await db.getProductByBarcode(exchangeBarcode.trim(), user.branch_id);
       setExchangedItem(prod);
       setExchangeBarcode('');
       toast.success('Added replacement item!');
@@ -234,13 +220,7 @@ const Exchanges = () => {
               </thead>
               <tbody>
                 {loadingBills ? (
-                  [...Array(5)].map((_, i) => (
-                    <tr key={`skel-${i}`}>
-                      <td colSpan="7" style={{ padding: '8px 16px' }}>
-                        <div className="skeleton skeleton-table-row" style={{ marginBottom: 0 }}></div>
-                      </td>
-                    </tr>
-                  ))
+                  <tr><td colSpan="7" style={{ textAlign: 'center', padding: '24px' }}>Loading customer records...</td></tr>
                 ) : filteredBills.length === 0 ? (
                   <tr><td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: '#aaa' }}>No customer bills found. Create a bill in POS first!</td></tr>
                 ) : (
@@ -270,29 +250,21 @@ const Exchanges = () => {
                           )}
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             <button 
                               className="btn btn-secondary" 
-                              style={{ padding: '6px 10px', fontSize: '11px' }} 
+                              style={{ padding: '6px 12px', fontSize: '11px' }} 
                               onClick={() => handleViewBill(bill, billRets)}
                             >
-                              👁️ View
+                              👁️ View Bill
                             </button>
                             {billRets.length > 0 ? (
                               <span style={{ fontSize: '11px', color: '#999', fontStyle: 'italic' }}>🔒 Return Completed</span>
                             ) : (
-                              <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }} onClick={() => selectBillForReturn(bill)}>
-                                🔄 Return
+                              <button className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '11px' }} onClick={() => selectBillForReturn(bill)}>
+                                🔄 Return / Exchange
                               </button>
                             )}
-                            <button 
-                              className="btn btn-danger" 
-                              style={{ padding: '6px 10px', fontSize: '11px', background: 'var(--danger)', color: 'var(--white)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                              onClick={() => handleDeleteBill(bill)}
-                              title="Delete bill made by mistake & restore stock"
-                            >
-                              🗑️ Delete
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -386,12 +358,7 @@ const Exchanges = () => {
                     placeholder="Scan or enter barcode..." 
                     value={exchangeBarcode}
                     onChange={e => setExchangeBarcode(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleScanNewItem(e.target.value);
-                      }
-                    }}
+                    onKeyDown={e => e.key === 'Enter' && handleScanNewItem()}
                   />
                   <button className="btn btn-primary" onClick={handleScanNewItem}>Add</button>
                 </div>

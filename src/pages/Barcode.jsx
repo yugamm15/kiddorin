@@ -47,7 +47,7 @@ const BarcodePage = () => {
   };
 
   const handleSelectOne = (id) => {
-    setSelectedIds(prev =>
+    setSelectedIds(prev => 
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     );
   };
@@ -60,22 +60,22 @@ const BarcodePage = () => {
         const elem = document.getElementById(`barsvg-${s.id}`);
         if (!elem) return;
         const isSticker = printPaperSize !== 'a4';
-        const barW = printPaperSize === '1.5x2' ? 1.4 : (printPaperSize === '2x1.5' ? 1.4 : 1.6);
-        const barH = printPaperSize === '1.5x2' ? 38 : (printPaperSize === '2x1.5' ? 32 : 50);
+        // Use clean bar widths and ensure safe quiet zone margins (8px min) so scanners never clip start/stop bars
+        const barW = printPaperSize === 'a4' ? 1.5 : (s.barcode.length > 12 ? 1.2 : 1.4);
+        const barH = printPaperSize === '1.5x2' ? 40 : (printPaperSize === '2x1.5' ? 32 : 50);
         JsBarcode(elem, s.barcode, {
-          format: 'CODE128',
-          width: barW,
-          height: barH,
-          displayValue: false,
+          format: 'CODE128', 
+          width: barW, 
+          height: barH, 
+          displayValue: false, 
           margin: isSticker ? 8 : 10,
           background: '#ffffff',
           lineColor: '#000000'
         });
-        elem.style.width = 'auto';
-        elem.style.maxWidth = '90%';
+        elem.style.maxWidth = '94%';
         elem.style.height = 'auto';
         elem.style.shapeRendering = 'crispEdges';
-      } catch (e) { }
+      } catch(e) {}
     });
   }, [selectedIds, products, printPaperSize]);
 
@@ -94,32 +94,32 @@ const BarcodePage = () => {
     <div className="page active" id="barcode-page">
       <div className="page-title">Barcode Generator</div>
       <div className="page-sub">Generate and print barcodes for products</div>
-
+      
       <div className="card" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div className="form-group" style={{ flex: '1 1 200px' }}>
             <label>Design Number / Name</label>
-            <input
-              type="text"
-              placeholder="e.g. 101 or Shirt"
+            <input 
+              type="text" 
+              placeholder="e.g. 101 or Shirt" 
               value={searchName}
               onChange={e => setSearchName(e.target.value)}
             />
           </div>
           <div className="form-group" style={{ flex: '1 1 150px' }}>
             <label>Color</label>
-            <input
-              type="text"
-              placeholder="e.g. BLUE"
+            <input 
+              type="text" 
+              placeholder="e.g. BLUE" 
               value={searchColor}
               onChange={e => setSearchColor(e.target.value)}
             />
           </div>
           <div className="form-group" style={{ flex: '1 1 150px' }}>
             <label>Size</label>
-            <input
-              type="text"
-              placeholder="e.g. 80"
+            <input 
+              type="text" 
+              placeholder="e.g. 80" 
               value={searchSize}
               onChange={e => setSearchSize(e.target.value)}
             />
@@ -137,14 +137,14 @@ const BarcodePage = () => {
           </button>
         </div>
       </div>
-
+      
       <div className="table-responsive desktop-table">
         <table className="table">
           <thead>
             <tr>
               <th style={{ width: '40px', textAlign: 'center' }}>
-                <input
-                  type="checkbox"
+                <input 
+                  type="checkbox" 
                   checked={areAllFilteredSelected}
                   onChange={handleSelectAll}
                   style={{ cursor: 'pointer', width: '16px', height: '16px' }}
@@ -168,15 +168,15 @@ const BarcodePage = () => {
                 </tr>
               ))
             ) : filtered.length === 0 ? (
-              <tr><td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: '#aaa' }}>No products found</td></tr>
+              <tr><td colSpan="7" style={{textAlign: 'center', padding: '24px', color: '#aaa'}}>No products found</td></tr>
             ) : (
               filtered.map(s => {
                 const isSelected = selectedIds.includes(s.id);
                 return (
                   <tr key={s.id} style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }}>
                     <td style={{ textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
+                      <input 
+                        type="checkbox" 
                         checked={isSelected}
                         onChange={() => handleSelectOne(s.id)}
                         style={{ cursor: 'pointer', width: '16px', height: '16px' }}
@@ -187,7 +187,7 @@ const BarcodePage = () => {
                     <td>{s.color}</td>
                     <td>{s.size}</td>
                     <td>₹{s.selling_price}</td>
-                    <td style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{s.barcode}</td>
+                    <td style={{fontFamily: 'monospace', color: 'var(--text-muted)'}}>{s.barcode}</td>
                   </tr>
                 );
               })
@@ -195,7 +195,7 @@ const BarcodePage = () => {
           </tbody>
         </table>
       </div>
-
+      
       {/* Dynamic Print Styles for Sticker Rolls */}
       {printPaperSize !== 'a4' && (
         <style>{`
@@ -204,47 +204,32 @@ const BarcodePage = () => {
               size: ${printPaperSize === '1.5x2' ? '1.5in 2in' : '2in 1.5in'};
               margin: 0;
             }
-            html, body, #app, #app.top-nav-layout, .main-content {
-              margin: 0 auto !important;
+            html, body {
+              margin: 0 !important;
               padding: 0 !important;
-              min-height: 0 !important;
-              height: auto !important;
-              width: 100% !important;
-              text-align: center !important;
+              width: ${printPaperSize === '1.5x2' ? '1.5in' : '2in'} !important;
             }
             #print-bill.barcode-grid {
-              display: flex !important;
-              flex-direction: column !important;
-              align-items: center !important;
-              justify-content: center !important;
-              margin: 0 auto !important;
+              display: block !important;
+              margin: 0 !important;
               padding: 0 !important;
-              width: 100% !important;
-            }
-            #print-bill.barcode-grid * {
-              color: #000000 !important;
+              width: ${printPaperSize === '1.5x2' ? '1.5in' : '2in'} !important;
             }
             #print-bill.barcode-grid .barcode-card {
               display: flex !important;
               flex-direction: column !important;
               align-items: center !important;
-              justify-content: flex-start !important;
+              justify-content: center !important;
               width: ${printPaperSize === '1.5x2' ? '1.5in' : '2in'} !important;
-              height: auto !important;
-              max-height: ${printPaperSize === '1.5x2' ? '1.92in' : '1.42in'} !important;
-              margin: 0 auto !important;
-              padding: 2px 2px !important;
+              height: ${printPaperSize === '1.5x2' ? '2in' : '1.5in'} !important;
+              margin: 0 !important;
+              padding: 4px 2px !important;
               border: none !important;
               box-shadow: none !important;
               page-break-after: always !important;
-              break-after: page !important;
               page-break-inside: avoid !important;
               box-sizing: border-box !important;
               overflow: hidden !important;
-            }
-            #print-bill.barcode-grid .barcode-card:last-child {
-              page-break-after: auto !important;
-              break-after: auto !important;
             }
             #print-bill.barcode-grid .barcode-card svg {
               max-width: 94% !important;
@@ -263,16 +248,16 @@ const BarcodePage = () => {
             <div key={s.id} className="barcode-card">
               <svg id={`barsvg-${s.id}`}></svg>
               <div style={{ textAlign: 'center', marginTop: '1px', marginBottom: '2px', lineHeight: 1.05 }}>
-                <div style={{ fontSize: printPaperSize === 'a4' ? '9px' : '6.5px', color: '#000000', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 0 }}>Available Size</div>
-                <div style={{ fontSize: printPaperSize === 'a4' ? '11px' : '8.5px', fontWeight: 700, color: '#000000', wordBreak: 'break-word', padding: '0 2px', marginTop: 0 }}>{availSizes}</div>
+                <div style={{ fontSize: printPaperSize === 'a4' ? '9px' : '6.5px', color: '#555', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 0 }}>Available Size</div>
+                <div style={{ fontSize: printPaperSize === 'a4' ? '11px' : '8.5px', fontWeight: 700, color: 'var(--dark)', wordBreak: 'break-word', padding: '0 2px', marginTop: 0 }}>{availSizes}</div>
               </div>
-              <div className="barcode-info" style={{ fontSize: printPaperSize === 'a4' ? '11px' : '8px', lineHeight: 1.2, textAlign: 'center', color: '#000000', fontWeight: 600 }}>
+              <div className="barcode-info" style={{ fontSize: printPaperSize === 'a4' ? '11px' : '8px', lineHeight: 1.2, textAlign: 'center' }}>
                 {s.category} | {s.size} | {s.color}
               </div>
-              <div className="barcode-price" style={{ fontSize: printPaperSize === 'a4' ? '18px' : '13px', margin: '1px 0', lineHeight: 1.1, fontWeight: 700, color: '#000000' }}>
+              <div className="barcode-price" style={{ fontSize: printPaperSize === 'a4' ? '18px' : '13px', margin: '1px 0', lineHeight: 1.1, fontWeight: 700 }}>
                 ₹{s.selling_price}
               </div>
-              <div style={{ fontSize: printPaperSize === 'a4' ? '10px' : '7px', color: '#000000', fontWeight: 600, fontFamily: 'monospace' }}>
+              <div style={{ fontSize: printPaperSize === 'a4' ? '10px' : '7px', color: '#666', fontFamily: 'monospace' }}>
                 {s.barcode}
               </div>
             </div>

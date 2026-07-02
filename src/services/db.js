@@ -215,25 +215,24 @@ class SupabaseDB {
 
   async getProductByBarcode(barcode, branch_id) {
     // Hardware scanners often append carriage returns (\r), newlines (\n), or whitespace
-    const rawBarcode = (barcode || '').replace(/[\r\n\t]/g, '').trim();
-    const cleanBarcode = rawBarcode.toUpperCase();
+    const cleanBarcode = (barcode || '').replace(/[\r\n\t]/g, '').trim().toUpperCase();
     
     let { data, error } = await supabase
       .from('products')
       .select('*')
+      .ilike('barcode', cleanBarcode)
       .eq('branch_id', branch_id)
       .eq('is_active', true)
-      .ilike('barcode', rawBarcode)
       .maybeSingle();
       
-    // Fallback: try clean uppercase match
+    // Fallback: try exact match if ilike didn't hit
     if (!data && !error) {
       const res = await supabase
         .from('products')
         .select('*')
+        .eq('barcode', cleanBarcode)
         .eq('branch_id', branch_id)
         .eq('is_active', true)
-        .ilike('barcode', cleanBarcode)
         .maybeSingle();
       data = res.data;
       error = res.error;
@@ -281,53 +280,6 @@ class SupabaseDB {
 
     this.cache = {}; // invalidate cache on sale
     return newBill;
-  }
-
-  async deleteBill(bill_id) {
-    if (!bill_id) throw new Error("Invalid Bill ID");
-
-    // 1. Fetch bill items to restore stock
-    const { data: items, error: fetchErr } = await supabase
-      .from('bill_items')
-      .select('*')
-      .eq('bill_id', bill_id);
-      
-    if (fetchErr && fetchErr.code !== 'PGRST116') {
-      console.warn("Could not fetch items for deletion:", fetchErr.message);
-    }
-
-    // 2. Restore stock for each item
-    if (items && items.length > 0) {
-      for (const item of items) {
-        if (item.product_id && item.quantity > 0) {
-          const { data: prod } = await supabase
-            .from('products')
-            .select('quantity')
-            .eq('id', item.product_id)
-            .maybeSingle();
-
-          if (prod) {
-            await supabase
-              .from('products')
-              .update({ quantity: (prod.quantity || 0) + item.quantity })
-              .eq('id', item.product_id);
-          }
-        }
-      }
-    }
-
-    // 3. Delete any returns associated with this bill
-    await supabase.from('returns_exchanges').delete().eq('original_bill_id', bill_id);
-
-    // 4. Delete bill items
-    await supabase.from('bill_items').delete().eq('bill_id', bill_id);
-
-    // 5. Delete the bill
-    const { error: delErr } = await supabase.from('bills').delete().eq('id', bill_id);
-    if (delErr) throw delErr;
-
-    this.cache = {};
-    return true;
   }
 
   async getDashboardStats(branch_id) {
