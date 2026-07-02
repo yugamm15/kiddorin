@@ -11,6 +11,7 @@ const Billing = () => {
   const [splitCash, setSplitCash] = useState('');
   const [error, setError] = useState('');
   const [billGenerated, setBillGenerated] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [discountValue, setDiscountValue] = useState('');
   const [discountType, setDiscountType] = useState('amount');
   const [customerName, setCustomerName] = useState('');
@@ -110,15 +111,22 @@ const Billing = () => {
   const finalAmount = Math.max(0, netBeforeCredit - creditApplied);
 
   const confirmBill = async () => {
+    if (billGenerated) {
+      toast.error('Bill already generated! Click "Clear Bill" to start a new sale.');
+      return;
+    }
+    if (isGenerating) return;
     if (items.length === 0) {
       toast.error('Please add items to the bill first.');
       return;
     }
     setError('');
+    setIsGenerating(true);
     try {
       if (paymentMethod === 'split' && finalAmount > 0) {
         if (splitCash === '' || isNaN(splitCash) || parseFloat(splitCash) < 0 || parseFloat(splitCash) > finalAmount) {
           toast.error(`Please enter a valid Cash amount between ₹0 and ₹${finalAmount} for split payment.`);
+          setIsGenerating(false);
           return;
         }
       }
@@ -163,6 +171,8 @@ const Billing = () => {
       setAvailableCredit(0);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -337,7 +347,7 @@ const Billing = () => {
                 {creditApplied > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0 0', color: '#2980b9', fontWeight: 700, fontSize: '13px' }}>
                     <span>💳 STORE CREDIT REDEEMED</span>
-                    <span>-₹{creditApplied.toLocaleString('en-IN')}</span>
+                    <span style={{ fontFamily: "'Arial Black', 'Impact', 'Trebuchet MS', sans-serif", fontSize: '15px' }}>-₹{creditApplied.toLocaleString('en-IN')}</span>
                   </div>
                 )}
               </>
@@ -345,7 +355,7 @@ const Billing = () => {
             
             <div className="total-row" style={{ borderTop: 'none', paddingTop: '16px' }}>
               <span className="label" style={{ color: 'var(--dark)' }}>TOTAL AMOUNT</span>
-              <span className="value">₹{finalAmount.toLocaleString('en-IN')}</span>
+              <span className="value" style={{ fontFamily: "'Arial Black', 'Impact', 'Trebuchet MS', sans-serif" }}>₹{finalAmount.toLocaleString('en-IN')}</span>
             </div>
           </div>
         </div>
@@ -393,7 +403,14 @@ const Billing = () => {
                 </div>
               </div>
             )}
-            <button className="btn btn-success" style={{ width: '100%', padding: '14px', fontSize: '15px' }} onClick={confirmBill}>✓ Confirm & Generate Bill</button>
+            <button 
+              className="btn btn-success" 
+              style={{ width: '100%', padding: '14px', fontSize: '15px', opacity: (billGenerated || isGenerating) ? 0.7 : 1, cursor: (billGenerated || isGenerating) ? 'not-allowed' : 'pointer' }} 
+              disabled={!!billGenerated || isGenerating} 
+              onClick={confirmBill}
+            >
+              {isGenerating ? '⏳ Generating Bill...' : (billGenerated ? '✓ Bill Generated Already' : '✓ Confirm & Generate Bill')}
+            </button>
             <button className="btn btn-secondary" style={{ width: '100%', marginTop: '8px' }} onClick={clearBill}>Clear Bill</button>
           </div>
           
@@ -406,7 +423,7 @@ const Billing = () => {
                 {billGenerated.discount > 0 && (
                   <div style={{ fontSize: '13px', color: 'var(--success)', marginBottom: '4px' }}>Discount Applied: ₹{billGenerated.discount.toLocaleString('en-IN')}</div>
                 )}
-                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--dark)' }}>Total: ₹{billGenerated.total.toLocaleString('en-IN')}</div>
+                <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: "'Arial Black', 'Impact', 'Trebuchet MS', sans-serif", color: 'var(--dark)' }}>Total: ₹{billGenerated.total.toLocaleString('en-IN')}</div>
               </div>
               <button className="btn btn-primary" style={{ width: '100%', marginTop: '12px' }} onClick={printBill}>🖨️ Print Bill</button>
             </div>
@@ -489,12 +506,12 @@ const Billing = () => {
             {billGenerated.creditApplied > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '8px', color: '#2980b9', fontWeight: 600 }}>
                 <span>Store Credit Applied:</span>
-                <span>-₹{billGenerated.creditApplied.toLocaleString('en-IN')}</span>
+                <span style={{ fontFamily: "'Arial Black', 'Impact', 'Trebuchet MS', sans-serif" }}>-₹{billGenerated.creditApplied.toLocaleString('en-IN')}</span>
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
               <span>Total Amount:</span>
-              <span>₹{billGenerated.total.toLocaleString('en-IN')}</span>
+              <span style={{ fontFamily: "'Arial Black', 'Impact', 'Trebuchet MS', sans-serif", fontSize: '16px' }}>₹{billGenerated.total.toLocaleString('en-IN')}</span>
             </div>
           </div>
           <div className="pb-footer">
