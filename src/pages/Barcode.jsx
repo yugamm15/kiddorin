@@ -263,7 +263,7 @@ const BarcodePage = () => {
               <div className="barcode-info" style={{ fontSize: printPaperSize === 'a4' ? '13px' : '10px', lineHeight: 1.2, textAlign: 'center', fontWeight: 800, color: '#000000' }}>
                 {s.category} | {s.size} | {s.color}
               </div>
-              <div className="barcode-price" style={{ fontSize: printPaperSize === 'a4' ? '22px' : '16px', margin: '1px 0', lineHeight: 1.1, fontWeight: 900, color: '#000000' }}>
+              <div className="barcode-price" style={{ fontSize: printPaperSize === 'a4' ? '26px' : '19px', fontFamily: "'Arial Black', 'Impact', 'Trebuchet MS', sans-serif", margin: '1px 0', lineHeight: 1.1, fontWeight: 900, color: '#000000' }}>
                 ₹{s.selling_price}
               </div>
               <div style={{ fontSize: printPaperSize === 'a4' ? '10px' : '7px', fontWeight: 800, color: '#000000', fontFamily: 'monospace' }}>
