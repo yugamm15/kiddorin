@@ -125,10 +125,11 @@ const Exchanges = () => {
     }
   };
 
-  const handleScanNewItem = async () => {
-    if (!exchangeBarcode.trim()) return;
+  const handleScanNewItem = async (overrideVal) => {
+    const valToScan = typeof overrideVal === 'string' ? overrideVal : exchangeBarcode;
+    if (!valToScan || !valToScan.trim()) return;
     try {
-      const prod = await db.getProductByBarcode(exchangeBarcode.trim(), user.branch_id);
+      const prod = await db.getProductByBarcode(valToScan.trim(), user.branch_id);
       setExchangedItem(prod);
       setExchangeBarcode('');
       toast.success('Added replacement item!');
@@ -385,7 +386,12 @@ const Exchanges = () => {
                     placeholder="Scan or enter barcode..." 
                     value={exchangeBarcode}
                     onChange={e => setExchangeBarcode(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleScanNewItem()}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleScanNewItem(e.target.value);
+                      }
+                    }}
                   />
                   <button className="btn btn-primary" onClick={handleScanNewItem}>Add</button>
                 </div>

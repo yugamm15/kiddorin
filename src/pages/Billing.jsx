@@ -35,8 +35,9 @@ const Billing = () => {
     fetchCredit();
   }, [customerPhone, user]);
 
-  const handleScan = async () => {
-    if (!barcode.trim()) return;
+  const handleScan = async (overrideVal) => {
+    const valToScan = typeof overrideVal === 'string' ? overrideVal : barcode;
+    if (!valToScan || !valToScan.trim()) return;
     if (generating) {
       toast.error('Please wait, currently generating bill...');
       return;
@@ -47,7 +48,7 @@ const Billing = () => {
     setError('');
 
     try {
-      const product = await db.getProductByBarcode(barcode.trim(), user.branch_id);
+      const product = await db.getProductByBarcode(valToScan.trim(), user.branch_id);
       
       const existingItem = items.find(i => i.product_id === product.id);
       if (existingItem) {
@@ -77,7 +78,10 @@ const Billing = () => {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleScan();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleScan(e.target.value);
+    }
   };
 
   const updateQuantity = (id, delta) => {

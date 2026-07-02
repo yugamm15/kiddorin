@@ -215,24 +215,25 @@ class SupabaseDB {
 
   async getProductByBarcode(barcode, branch_id) {
     // Hardware scanners often append carriage returns (\r), newlines (\n), or whitespace
-    const cleanBarcode = (barcode || '').replace(/[\r\n\t]/g, '').trim().toUpperCase();
+    const rawBarcode = (barcode || '').replace(/[\r\n\t]/g, '').trim();
+    const cleanBarcode = rawBarcode.toUpperCase();
     
     let { data, error } = await supabase
       .from('products')
       .select('*')
-      .ilike('barcode', cleanBarcode)
       .eq('branch_id', branch_id)
       .eq('is_active', true)
+      .ilike('barcode', rawBarcode)
       .maybeSingle();
       
-    // Fallback: try exact match if ilike didn't hit
+    // Fallback: try clean uppercase match
     if (!data && !error) {
       const res = await supabase
         .from('products')
         .select('*')
-        .eq('barcode', cleanBarcode)
         .eq('branch_id', branch_id)
         .eq('is_active', true)
+        .ilike('barcode', cleanBarcode)
         .maybeSingle();
       data = res.data;
       error = res.error;

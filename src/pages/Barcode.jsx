@@ -47,7 +47,7 @@ const BarcodePage = () => {
   };
 
   const handleSelectOne = (id) => {
-    setSelectedIds(prev => 
+    setSelectedIds(prev =>
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     );
   };
@@ -60,22 +60,22 @@ const BarcodePage = () => {
         const elem = document.getElementById(`barsvg-${s.id}`);
         if (!elem) return;
         const isSticker = printPaperSize !== 'a4';
-        // Use clean bar widths and ensure safe quiet zone margins (8px min) so scanners never clip start/stop bars
-        const barW = printPaperSize === 'a4' ? 1.5 : (s.barcode.length > 12 ? 1.2 : 1.4);
-        const barH = printPaperSize === '1.5x2' ? 40 : (printPaperSize === '2x1.5' ? 32 : 50);
+        const barW = printPaperSize === '1.5x2' ? 1.4 : (printPaperSize === '2x1.5' ? 1.4 : 1.6);
+        const barH = printPaperSize === '1.5x2' ? 38 : (printPaperSize === '2x1.5' ? 32 : 50);
         JsBarcode(elem, s.barcode, {
-          format: 'CODE128', 
-          width: barW, 
-          height: barH, 
-          displayValue: false, 
+          format: 'CODE128',
+          width: barW,
+          height: barH,
+          displayValue: false,
           margin: isSticker ? 8 : 10,
           background: '#ffffff',
           lineColor: '#000000'
         });
-        elem.style.maxWidth = '94%';
+        elem.style.width = 'auto';
+        elem.style.maxWidth = '90%';
         elem.style.height = 'auto';
         elem.style.shapeRendering = 'crispEdges';
-      } catch(e) {}
+      } catch (e) { }
     });
   }, [selectedIds, products, printPaperSize]);
 
@@ -94,32 +94,32 @@ const BarcodePage = () => {
     <div className="page active" id="barcode-page">
       <div className="page-title">Barcode Generator</div>
       <div className="page-sub">Generate and print barcodes for products</div>
-      
+
       <div className="card" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div className="form-group" style={{ flex: '1 1 200px' }}>
             <label>Design Number / Name</label>
-            <input 
-              type="text" 
-              placeholder="e.g. 101 or Shirt" 
+            <input
+              type="text"
+              placeholder="e.g. 101 or Shirt"
               value={searchName}
               onChange={e => setSearchName(e.target.value)}
             />
           </div>
           <div className="form-group" style={{ flex: '1 1 150px' }}>
             <label>Color</label>
-            <input 
-              type="text" 
-              placeholder="e.g. BLUE" 
+            <input
+              type="text"
+              placeholder="e.g. BLUE"
               value={searchColor}
               onChange={e => setSearchColor(e.target.value)}
             />
           </div>
           <div className="form-group" style={{ flex: '1 1 150px' }}>
             <label>Size</label>
-            <input 
-              type="text" 
-              placeholder="e.g. 80" 
+            <input
+              type="text"
+              placeholder="e.g. 80"
               value={searchSize}
               onChange={e => setSearchSize(e.target.value)}
             />
@@ -137,14 +137,14 @@ const BarcodePage = () => {
           </button>
         </div>
       </div>
-      
+
       <div className="table-responsive desktop-table">
         <table className="table">
           <thead>
             <tr>
               <th style={{ width: '40px', textAlign: 'center' }}>
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   checked={areAllFilteredSelected}
                   onChange={handleSelectAll}
                   style={{ cursor: 'pointer', width: '16px', height: '16px' }}
@@ -168,15 +168,15 @@ const BarcodePage = () => {
                 </tr>
               ))
             ) : filtered.length === 0 ? (
-              <tr><td colSpan="7" style={{textAlign: 'center', padding: '24px', color: '#aaa'}}>No products found</td></tr>
+              <tr><td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: '#aaa' }}>No products found</td></tr>
             ) : (
               filtered.map(s => {
                 const isSelected = selectedIds.includes(s.id);
                 return (
                   <tr key={s.id} style={{ backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }}>
                     <td style={{ textAlign: 'center' }}>
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={isSelected}
                         onChange={() => handleSelectOne(s.id)}
                         style={{ cursor: 'pointer', width: '16px', height: '16px' }}
@@ -187,7 +187,7 @@ const BarcodePage = () => {
                     <td>{s.color}</td>
                     <td>{s.size}</td>
                     <td>₹{s.selling_price}</td>
-                    <td style={{fontFamily: 'monospace', color: 'var(--text-muted)'}}>{s.barcode}</td>
+                    <td style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{s.barcode}</td>
                   </tr>
                 );
               })
@@ -195,7 +195,7 @@ const BarcodePage = () => {
           </tbody>
         </table>
       </div>
-      
+
       {/* Dynamic Print Styles for Sticker Rolls */}
       {printPaperSize !== 'a4' && (
         <style>{`
@@ -228,11 +228,12 @@ const BarcodePage = () => {
               display: flex !important;
               flex-direction: column !important;
               align-items: center !important;
-              justify-content: center !important;
+              justify-content: flex-start !important;
               width: ${printPaperSize === '1.5x2' ? '1.5in' : '2in'} !important;
-              height: ${printPaperSize === '1.5x2' ? '2in' : '1.5in'} !important;
+              height: auto !important;
+              max-height: ${printPaperSize === '1.5x2' ? '1.92in' : '1.42in'} !important;
               margin: 0 auto !important;
-              padding: 4px 2px !important;
+              padding: 2px 2px !important;
               border: none !important;
               box-shadow: none !important;
               page-break-after: always !important;
