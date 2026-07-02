@@ -1183,6 +1183,11 @@ textarea:focus {
     display: block !important;
     margin: 10px !important;
     text-align: left !important;
+    color: #000000 !important;
+  }
+
+  .barcode-grid * {
+    color: #000000 !important;
   }
 
   .barcode-card {
@@ -1196,7 +1201,8 @@ textarea:focus {
     vertical-align: top !important;
     transform: none !important;
     page-break-inside: avoid;
-    border: 1px dashed var(--border) !important;
+    border: 1px dashed #000000 !important;
+    color: #000000 !important;
   }
 
   .barcode-card svg {
