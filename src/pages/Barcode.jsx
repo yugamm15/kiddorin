@@ -260,10 +260,10 @@ const BarcodePage = () => {
                 <div style={{ fontSize: printPaperSize === 'a4' ? '9px' : '6.5px', fontWeight: 800, color: '#000000', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 0 }}>Available Size</div>
                 <div style={{ fontSize: printPaperSize === 'a4' ? '11px' : '8.5px', fontWeight: 900, color: '#000000', wordBreak: 'break-word', padding: '0 2px', marginTop: 0 }}>{availSizes}</div>
               </div>
-              <div className="barcode-info" style={{ fontSize: printPaperSize === 'a4' ? '11px' : '8px', lineHeight: 1.2, textAlign: 'center', fontWeight: 800, color: '#000000' }}>
+              <div className="barcode-info" style={{ fontSize: printPaperSize === 'a4' ? '13px' : '10px', lineHeight: 1.2, textAlign: 'center', fontWeight: 800, color: '#000000' }}>
                 {s.category} | {s.size} | {s.color}
               </div>
-              <div className="barcode-price" style={{ fontSize: printPaperSize === 'a4' ? '18px' : '13px', margin: '1px 0', lineHeight: 1.1, fontWeight: 900, color: '#000000' }}>
+              <div className="barcode-price" style={{ fontSize: printPaperSize === 'a4' ? '22px' : '16px', margin: '1px 0', lineHeight: 1.1, fontWeight: 900, color: '#000000' }}>
                 ₹{s.selling_price}
               </div>
               <div style={{ fontSize: printPaperSize === 'a4' ? '10px' : '7px', fontWeight: 800, color: '#000000', fontFamily: 'monospace' }}>
