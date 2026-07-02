@@ -1155,9 +1155,11 @@ textarea:focus {
     margin: 0;
   }
 
-  body {
+  html, body, #app, #app.top-nav-layout {
     background: white !important;
     background-image: none !important;
+    min-height: 0 !important;
+    height: auto !important;
   }
 
   .luxury-header,
@@ -1177,6 +1179,8 @@ textarea:focus {
   .main-content {
     margin: 0 !important;
     padding: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
   }
 
   .barcode-grid {
