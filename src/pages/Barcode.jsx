@@ -219,11 +219,11 @@ const BarcodePage = () => {
               display: flex !important;
               flex-direction: column !important;
               align-items: center !important;
-              justify-content: center !important;
+              justify-content: flex-start !important;
               width: ${printPaperSize === '1.5x2' ? '1.5in' : '2in'} !important;
               height: ${printPaperSize === '1.5x2' ? '2in' : '1.5in'} !important;
               margin: 0 !important;
-              padding: 4px 2px !important;
+              padding: 2px 2px !important;
               border: none !important;
               box-shadow: none !important;
               page-break-after: always !important;
