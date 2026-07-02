@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 
 const DEFAULT_CATEGORIES = ['T-Shirt', 'Frock', 'Pant', 'Shirt', 'Jacket', 'Shorts', 'Dress', 'Top', 'Leggings', 'Dungaree', 'Night Suit'];
 const DEFAULT_SIZES = ['80', '90', '100', '110', '120', '130', '140', '150', '160', '170'];
@@ -62,92 +63,133 @@ const Stock = () => {
   };
 
   const downloadTemplate = () => {
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + "Category,Gender,Design Number,Color,Size,Quantity,Purchase Price,Selling Price\n"
-      + "T-Shirt,Boy,D-2001,RED,100,10,250,450\n"
-      + "Frock,Girl,D-2002,PINK,110,5,350,650";
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "kiddorin_bulk_stock_template.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const defaultDate = new Date().toISOString().split('T')[0];
+    const defaultBranch = user?.branch?.name || 'Main Store';
+    const firstDealer = dealers.length > 0 ? dealers[0].name : 'Fashion Traders';
+    
+    const wsData = [
+      ["Category", "Gender", "Design Number", "Color", "Size", "Quantity", "Purchase Price", "Selling Price", "Dealer Name", "Branch Name", "Date"],
+      ["T-Shirt", "Boy", "D-2001", "RED", "100", 10, 250, 450, firstDealer, defaultBranch, defaultDate],
+      ["Frock", "Girl", "D-2002", "PINK", "110", 5, 350, 650, firstDealer, defaultBranch, defaultDate]
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    XLSX.utils.book_append_sheet(wb, ws, "Bulk Stock Template");
+    XLSX.writeFile(wb, "kiddorin_bulk_stock_template.xlsx");
   };
 
   const processFile = async (file) => {
     if (!file) return;
 
-    if (!file.name.endsWith('.csv')) {
-      toast.error('Please upload a .csv file. Use the Download Template button to get the exact format!');
+    if (!file.name.match(/\.(csv|xlsx|xls)$/i)) {
+      toast.error('Please upload an Excel (.xlsx, .xls) or .csv file. Use the Download Template button!');
       return;
     }
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const text = evt.target.result;
-      const lines = text.split(/\r\n|\n/).filter(l => l.trim().length > 0);
-      if (lines.length < 2) {
-        toast.error('CSV file is empty or missing data rows.');
-        return;
-      }
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet);
 
-      const toastId = toast.loading('Processing bulk stock spreadsheet... Please wait ⏳');
-      let successCount = 0;
-      let skipCount = 0;
-      const designsAddedInThisBatch = new Set();
-
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-        if (cols.length < 8) continue;
-
-        const [category, gender, design_number, color, size, quantity, purchase_price, selling_price] = cols;
-        if (!design_number || !quantity || !selling_price) continue;
-
-        const designKey = design_number.toUpperCase();
-
-        if (!designsAddedInThisBatch.has(designKey)) {
-          const exists = await db.checkDesignExists(design_number, user.branch_id);
-          if (exists) {
-            skipCount++;
-            continue;
-          }
-          designsAddedInThisBatch.add(designKey);
+        if (!rows || rows.length === 0) {
+          toast.error('Spreadsheet is empty or missing data rows.');
+          return;
         }
 
-        try {
-          await db.addStock({
-            category: category || 'General',
-            gender: gender || 'Unisex',
-            design_number,
-            color: color || 'MULTI',
-            size: size || 'FREE',
-            quantity: parseInt(quantity) || 1,
-            purchase_price: parseFloat(purchase_price) || 0,
-            selling_price: parseFloat(selling_price) || 0,
-            dealer_id: formData.dealer_id || null,
-            branch_id: user.branch_id,
-            date: new Date().toISOString().split('T')[0]
+        const toastId = toast.loading('Processing bulk stock spreadsheet... Please wait ⏳');
+        let successCount = 0;
+        let skipCount = 0;
+        const designsAddedInThisBatch = new Set();
+
+        for (const row of rows) {
+          // Normalize column keys (lowercase and trimmed)
+          const cleanRow = {};
+          Object.keys(row).forEach(k => {
+            cleanRow[k.trim().toLowerCase()] = row[k];
           });
-          successCount++;
-        } catch (err) {
-          console.error('Row error:', err);
-        }
-      }
 
-      if (successCount > 0) {
-        toast.success(`Bulk upload completed! Successfully added ${successCount} items.`, { id: toastId });
-        if (skipCount > 0) {
-          toast.error(`Skipped ${skipCount} items because their Design Numbers already exist in your branch.`);
+          const design_number = String(cleanRow['design number'] || cleanRow['design_number'] || cleanRow['design'] || '').trim();
+          const quantity = parseInt(cleanRow['quantity'] || cleanRow['qty']) || 1;
+          const purchase_price = parseFloat(cleanRow['purchase price'] || cleanRow['purchase_price'] || cleanRow['cost']) || 0;
+          const selling_price = parseFloat(cleanRow['selling price'] || cleanRow['selling_price'] || cleanRow['price']) || 0;
+
+          if (!design_number) continue;
+
+          const designKey = design_number.toUpperCase();
+          if (!designsAddedInThisBatch.has(designKey)) {
+            const exists = await db.checkDesignExists(design_number, user.branch_id);
+            if (exists) {
+              skipCount++;
+              continue;
+            }
+            designsAddedInThisBatch.add(designKey);
+          }
+
+          // Dealer lookup
+          let dealer_id = formData.dealer_id || null;
+          const dealerName = String(cleanRow['dealer name'] || cleanRow['dealer'] || '').trim();
+          if (dealerName) {
+            const matchedDealer = dealers.find(d => d.name.toLowerCase() === dealerName.toLowerCase());
+            if (matchedDealer) dealer_id = matchedDealer.id;
+          }
+
+          // Date lookup (default to today if empty)
+          let dateStr = new Date().toISOString().split('T')[0];
+          const rawDate = cleanRow['date'];
+          if (rawDate) {
+            if (typeof rawDate === 'number') {
+              // Excel date serial number
+              const excelDate = new Date((rawDate - (25567 + 2)) * 86400 * 1000);
+              if (!isNaN(excelDate.getTime())) {
+                dateStr = excelDate.toISOString().split('T')[0];
+              }
+            } else if (typeof rawDate === 'string' && rawDate.trim()) {
+              dateStr = rawDate.trim();
+            }
+          }
+
+          try {
+            await db.addStock({
+              category: String(cleanRow['category'] || 'General').trim(),
+              gender: String(cleanRow['gender'] || 'Unisex').trim(),
+              design_number,
+              color: String(cleanRow['color'] || 'MULTI').trim(),
+              size: String(cleanRow['size'] || 'FREE').trim(),
+              quantity,
+              purchase_price,
+              selling_price,
+              dealer_id,
+              branch_id: user.branch_id,
+              date: dateStr
+            });
+            successCount++;
+          } catch (err) {
+            console.error('Row error:', err);
+          }
         }
-      } else if (skipCount > 0) {
-        toast.error(`All ${skipCount} items were skipped because their Design Numbers already exist in your store branch! Use Restock in Inventory.`, { id: toastId });
-      } else {
-        toast.error('Failed to process rows. Check CSV format.', { id: toastId });
+
+        if (successCount > 0) {
+          toast.success(`Bulk upload completed! Successfully added ${successCount} items.`, { id: toastId });
+          if (skipCount > 0) {
+            toast.error(`Skipped ${skipCount} items because their Design Numbers already exist in your branch.`);
+          }
+        } else if (skipCount > 0) {
+          toast.error(`All ${skipCount} items were skipped because their Design Numbers already exist in your store branch! Use Restock in Inventory.`, { id: toastId });
+        } else {
+          toast.error('Failed to process rows. Check spreadsheet columns.', { id: toastId });
+        }
+      } catch (err) {
+        toast.error('Error reading file. Please upload a valid Excel or CSV.');
+        console.error(err);
       }
       if (fileInputRef.current) fileInputRef.current.value = null;
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const handleDragOver = (e) => {
@@ -246,11 +288,11 @@ const Stock = () => {
         <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>🚀 Bulk Stock Insertion (CSV / Excel)</span>
           <button className="btn btn-secondary" onClick={downloadTemplate} style={{ fontSize: '12px', padding: '6px 14px', borderRadius: '20px' }}>
-            ⬇ Download Template (.csv)
+            ⬇ Download Template (.xlsx)
           </button>
         </div>
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-          Upload a completed CSV template file to add multiple new products at once. Existing branch design numbers will be automatically skipped!
+          Upload a completed Excel (.xlsx/.xls) or CSV template file to add multiple new products at once. Existing branch design numbers will be automatically skipped!
         </p>
         
         {/* Drag and Drop Zone */}
@@ -277,17 +319,17 @@ const Stock = () => {
           <input 
             type="file" 
             ref={fileInputRef}
-            accept=".csv" 
+            accept=".csv,.xlsx,.xls" 
             onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])}
             style={{ display: 'none' }}
           />
           <div style={{ fontSize: '36px' }}>📂</div>
           <div>
             <span style={{ fontWeight: '600', color: 'var(--primary)', fontSize: '15px' }}>Click to browse</span>
-            <span style={{ color: 'var(--text-muted)', fontSize: '15px' }}> or drag and drop your CSV file here</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '15px' }}> or drag and drop your Excel / CSV file here</span>
           </div>
           <div style={{ fontSize: '12px', color: '#94a3b8', background: '#e2e8f0', padding: '4px 10px', borderRadius: '12px' }}>
-            Supports .CSV format
+            Supports Excel (.XLSX, .XLS) & .CSV format
           </div>
         </div>
       </div>
