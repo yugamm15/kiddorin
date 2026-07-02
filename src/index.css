@@ -1205,6 +1205,10 @@ textarea:focus {
     /* Force the height so the barcode lines are visible */
   }
 
+  .barcode-grid * {
+    color: #000000 !important;
+  }
+
   #print-bill,
   #exchange-print-slip {
     display: block !important;
