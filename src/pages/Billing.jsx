@@ -11,6 +11,7 @@ const Billing = () => {
   const [splitCash, setSplitCash] = useState('');
   const [error, setError] = useState('');
   const [billGenerated, setBillGenerated] = useState(null);
+  const [generating, setGenerating] = useState(false);
   const [discountValue, setDiscountValue] = useState('');
   const [discountType, setDiscountType] = useState('amount');
   const [customerName, setCustomerName] = useState('');
@@ -36,6 +37,13 @@ const Billing = () => {
 
   const handleScan = async () => {
     if (!barcode.trim()) return;
+    if (generating) {
+      toast.error('Please wait, currently generating bill...');
+      return;
+    }
+    if (billGenerated) {
+      setBillGenerated(null);
+    }
     setError('');
 
     try {
@@ -73,6 +81,8 @@ const Billing = () => {
   };
 
   const updateQuantity = (id, delta) => {
+    if (generating) return;
+    if (billGenerated) setBillGenerated(null);
     setItems(items.map(item => {
       if (item.product_id === id) {
         const newQty = item.qty + delta;
@@ -88,6 +98,8 @@ const Billing = () => {
   };
 
   const removeItem = (id) => {
+    if (generating) return;
+    if (billGenerated) setBillGenerated(null);
     setItems(items.filter(i => i.product_id !== id));
   };
 
@@ -110,15 +122,25 @@ const Billing = () => {
   const finalAmount = Math.max(0, netBeforeCredit - creditApplied);
 
   const confirmBill = async () => {
+    if (billGenerated) {
+      toast.error('This bill has already been generated!');
+      return;
+    }
+    if (generating) {
+      toast.error('Please wait, bill is being generated...');
+      return;
+    }
     if (items.length === 0) {
       toast.error('Please add items to the bill first.');
       return;
     }
     setError('');
+    setGenerating(true);
     try {
       if (paymentMethod === 'split' && finalAmount > 0) {
         if (splitCash === '' || isNaN(splitCash) || parseFloat(splitCash) < 0 || parseFloat(splitCash) > finalAmount) {
           toast.error(`Please enter a valid Cash amount between ₹0 and ₹${finalAmount} for split payment.`);
+          setGenerating(false);
           return;
         }
       }
@@ -163,6 +185,8 @@ const Billing = () => {
       setAvailableCredit(0);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -393,7 +417,20 @@ const Billing = () => {
                 </div>
               </div>
             )}
-            <button className="btn btn-success" style={{ width: '100%', padding: '14px', fontSize: '15px' }} onClick={confirmBill}>✓ Confirm & Generate Bill</button>
+            <button 
+              className="btn btn-success" 
+              style={{ 
+                width: '100%', 
+                padding: '14px', 
+                fontSize: '15px',
+                opacity: (generating || billGenerated) ? 0.65 : 1,
+                cursor: (generating || billGenerated) ? 'not-allowed' : 'pointer'
+              }} 
+              disabled={generating || !!billGenerated} 
+              onClick={confirmBill}
+            >
+              {generating ? '⏳ Generating Bill...' : (billGenerated ? '✓ Bill Already Generated' : '✓ Confirm & Generate Bill')}
+            </button>
             <button className="btn btn-secondary" style={{ width: '100%', marginTop: '8px' }} onClick={clearBill}>Clear Bill</button>
           </div>
           
