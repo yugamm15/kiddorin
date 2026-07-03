@@ -75,7 +75,7 @@ class SupabaseDB {
     const { data: purchases, error: pErr } = await supabase
       .from('purchases')
       .select('dealer_id, quantity, purchase_price');
-    
+
     // It's possible purchases table is empty or fails if schema is incomplete, so we catch it gracefully
     const validPurchases = (!pErr && purchases) ? purchases : [];
 
@@ -89,7 +89,7 @@ class SupabaseDB {
 
   async addStock(productData) {
     const barcode = `${productData.design_number}-${productData.size}-${productData.color}`.replace(/\s+/g, '').toUpperCase();
-    
+
     // Check if product exists
     const { data: existing } = await supabase
       .from('products')
@@ -104,7 +104,7 @@ class SupabaseDB {
       // Update quantity
       const { data, error } = await supabase
         .from('products')
-        .update({ 
+        .update({
           quantity: existing.quantity + parseInt(productData.quantity),
           purchase_price: parseFloat(productData.purchase_price),
           selling_price: parseFloat(productData.selling_price)
@@ -147,7 +147,7 @@ class SupabaseDB {
         purchase_price: parseFloat(productData.purchase_price),
         date: productData.date || new Date().toISOString()
       }]);
-      
+
     if (purchaseError) throw purchaseError;
     this.cache = {}; // invalidate cache on stock update
     return true;
@@ -216,7 +216,7 @@ class SupabaseDB {
   async getProductByBarcode(barcode, branch_id) {
     // Hardware scanners often append carriage returns (\r), newlines (\n), or whitespace
     const cleanBarcode = (barcode || '').replace(/[\r\n\t]/g, '').trim().toUpperCase();
-    
+
     let { data, error } = await supabase
       .from('products')
       .select('*')
@@ -224,7 +224,7 @@ class SupabaseDB {
       .eq('branch_id', branch_id)
       .eq('is_active', true)
       .maybeSingle();
-      
+
     // Fallback: try exact match if ilike didn't hit
     if (!data && !error) {
       const res = await supabase
@@ -258,7 +258,7 @@ class SupabaseDB {
       }])
       .select()
       .single();
-      
+
     if (billError) throw billError;
 
     // 2. Insert Bill Items & Update Stock
@@ -291,7 +291,7 @@ class SupabaseDB {
       .select('quantity')
       .eq('branch_id', branch_id)
       .eq('is_active', true);
-      
+
     const totalStock = products ? products.reduce((sum, p) => sum + p.quantity, 0) : 0;
     const lowStockCount = products ? products.filter(p => p.quantity < 5).length : 0;
 
@@ -335,7 +335,7 @@ class SupabaseDB {
     const branchesWithStats = await Promise.all(branches.map(async (branch) => {
       const { data: prods } = await supabase.from('products').select('quantity').eq('branch_id', branch.id);
       const stockItems = prods ? prods.reduce((sum, p) => sum + p.quantity, 0) : 0;
-      
+
       const { data: bills } = await supabase.from('bills').select('total_amount').eq('branch_id', branch.id);
       const totalBills = bills ? bills.length : 0;
       const totalRevenue = bills ? bills.reduce((sum, b) => sum + Number(b.total_amount), 0) : 0;
