@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
 import JsBarcode from 'jsbarcode';
+import bwipjs from 'bwip-js';
 import toast from 'react-hot-toast';
 
 const BarcodePage = () => {
@@ -57,24 +58,34 @@ const BarcodePage = () => {
     itemsToPrint.forEach(s => {
       try {
         if (!s.barcode) return;
-        const elem = document.getElementById(`barsvg-${s.id}`);
+        const elem = document.getElementById(`barcanvas-${s.id}`);
         if (!elem) return;
-        const isSticker = printPaperSize !== 'a4';
-        JsBarcode(elem, s.barcode, {
-          format: 'CODE128',
-          width: 2.5,
-          height: 70,
-          margin: 10,
-          displayValue: false,
-          background: '#FFFFFF',
-          lineColor: '#000000'
+        bwipjs.toCanvas(elem, {
+          bcid: 'code128',
+          text: String(s.barcode),
+          scale: 4,              // High DPI (300 DPI) industrial raster rendering
+          height: 13,            // Physical bar height
+          includetext: false,
+          backgroundcolor: 'FFFFFF',
+          paddingwidth: 12
         });
-        elem.setAttribute('shape-rendering', 'crispEdges');
-        elem.style.width = 'auto';
-        elem.style.height = 'auto';
         elem.style.display = 'block';
         elem.style.margin = '0 auto';
-      } catch (e) { }
+      } catch (e) {
+        // Fallback to JsBarcode if needed
+        try {
+          const svgElem = document.getElementById(`barcanvas-${s.id}`);
+          if (svgElem) {
+            JsBarcode(svgElem, String(s.barcode), {
+              format: "CODE128",
+              width: 2,
+              height: 70,
+              margin: 12,
+              displayValue: false
+            });
+          }
+        } catch (err) {}
+      }
     });
   }, [selectedIds, products, printPaperSize]);
 
@@ -234,13 +245,22 @@ const BarcodePage = () => {
             #print-bill.barcode-grid .barcode-card:last-child {
               page-break-after: auto !important;
             }
+            * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            #print-bill {
+              transform: none !important;
+            }
             #print-bill.barcode-grid .barcode-card * {
               font-weight: 800 !important;
               color: #000000 !important;
             }
+            #print-bill.barcode-grid .barcode-card canvas,
             #print-bill.barcode-grid .barcode-card svg {
-              width: ${printPaperSize === '2x1.5' ? '46mm' : '34mm'} !important;
-              height: ${printPaperSize === '2x1.5' ? '20mm' : '28mm'} !important;
+              width: 45mm !important;
+              height: 13mm !important;
+              image-rendering: pixelated !important;
               shape-rendering: crispEdges !important;
               display: block !important;
               margin: 0 auto !important;
@@ -257,7 +277,7 @@ const BarcodePage = () => {
             .join(', ');
           return (
             <div key={s.id} className="barcode-card">
-              <svg id={`barsvg-${s.id}`}></svg>
+              <canvas id={`barcanvas-${s.id}`}></canvas>
               <div style={{ textAlign: 'center', marginTop: '1px', marginBottom: '2px', lineHeight: 1.05 }}>
                 <div style={{ fontSize: printPaperSize === 'a4' ? '9px' : '6.5px', fontWeight: 800, color: '#000000', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 0 }}>Available Size</div>
                 <div style={{ fontSize: printPaperSize === 'a4' ? '11px' : '8.5px', fontWeight: 900, color: '#000000', wordBreak: 'break-word', padding: '0 2px', marginTop: 0 }}>{availSizes}</div>

@@ -88,15 +88,15 @@ class SupabaseDB {
   }
 
   async addStock(productData) {
-    const barcode = `${productData.design_number}-${productData.size}-${productData.color}`.replace(/\s+/g, '').toUpperCase();
-
-    // Check if product exists
+    // Check if product already exists by design_number, size, and color
     const { data: existing } = await supabase
       .from('products')
       .select('*')
-      .eq('barcode', barcode)
+      .ilike('design_number', (productData.design_number || '').trim())
+      .ilike('size', (productData.size || '').trim())
+      .ilike('color', (productData.color || '').trim())
       .eq('branch_id', productData.branch_id)
-      .single();
+      .maybeSingle();
 
     let product_id;
 
@@ -115,6 +115,25 @@ class SupabaseDB {
       if (error) throw error;
       product_id = data.id;
     } else {
+      // Generate sequential alphanumeric SKU barcode starting from P10001
+      const { data: skuRows } = await supabase
+        .from('products')
+        .select('barcode');
+      
+      let nextNum = 10001;
+      if (skuRows && skuRows.length > 0) {
+        skuRows.forEach(row => {
+          const code = String(row.barcode || '').trim().toUpperCase();
+          if (code.startsWith('P')) {
+            const val = parseInt(code.substring(1), 10);
+            if (!isNaN(val) && val >= 10000) {
+              if (val >= nextNum) nextNum = val + 1;
+            }
+          }
+        });
+      }
+      const newBarcode = `P${nextNum}`;
+
       // Insert new product
       const { data, error } = await supabase
         .from('products')
@@ -124,7 +143,7 @@ class SupabaseDB {
           color: productData.color,
           size: productData.size,
           design_number: productData.design_number,
-          barcode: barcode,
+          barcode: newBarcode,
           purchase_price: parseFloat(productData.purchase_price),
           selling_price: parseFloat(productData.selling_price),
           quantity: parseInt(productData.quantity),
