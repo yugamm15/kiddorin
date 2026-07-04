@@ -21,6 +21,7 @@ const Exchanges = () => {
   const [exchangeBarcode, setExchangeBarcode] = useState('');
   const [exchangedItem, setExchangedItem] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [splitCash, setSplitCash] = useState('');
   const [processing, setProcessing] = useState(false);
 
   // Receipt modal
@@ -28,6 +29,8 @@ const Exchanges = () => {
   const [branchReturns, setBranchReturns] = useState([]);
   const [viewingReturnHistory, setViewingReturnHistory] = useState(null);
   const [viewingBillPreview, setViewingBillPreview] = useState(null);
+  const [deleteBillItem, setDeleteBillItem] = useState(null);
+  const [deleteReturnItem, setDeleteReturnItem] = useState(null);
 
   useEffect(() => {
     if (user?.branch_id) {
@@ -144,6 +147,10 @@ const Exchanges = () => {
     try {
       const finalReason = returnReason === 'Other' ? customReason : returnReason;
 
+      const sCashAmt = parseFloat(splitCash) || 0;
+      const sUpiAmt = Math.max(0, netDiff - sCashAmt);
+      const finalPayMethod = paymentMethod === 'Split' ? `Split (Cash: ₹${sCashAmt}, GPay: ₹${sUpiAmt})` : paymentMethod;
+
       const payload = {
         branch_id: user.branch_id,
         original_bill_id: selectedBill?.id || null,
@@ -155,7 +162,7 @@ const Exchanges = () => {
         exchanged_product_id: exchangedItem?.id || null,
         exchanged_qty: exchangedItem ? 1 : 0,
         net_amount: netDiff,
-        payment_method: netDiff > 0 ? paymentMethod : 'Store Credit Note'
+        payment_method: netDiff > 0 ? finalPayMethod : 'Store Credit Note'
       };
 
       const result = await db.processExchange(payload);
@@ -170,7 +177,7 @@ const Exchanges = () => {
         returnReason: finalReason,
         exchangedItem: exchangedItem,
         netAmount: netDiff,
-        paymentMethod: netDiff > 0 ? paymentMethod : 'Store Credit Note'
+        paymentMethod: netDiff > 0 ? finalPayMethod : 'Store Credit Note'
       });
 
       // reset inputs
@@ -265,6 +272,14 @@ const Exchanges = () => {
                                 🔄 Return / Exchange
                               </button>
                             )}
+                            <button 
+                              className="btn btn-secondary" 
+                              title="Delete Bill"
+                              style={{ padding: '6px 10px', fontSize: '13px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}
+                              onClick={() => setDeleteBillItem(bill)}
+                            >
+                              🗑️
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -415,10 +430,40 @@ const Exchanges = () => {
                 {netDiff > 0 && (
                   <div className="form-group" style={{ marginBottom: '16px' }}>
                     <label>Collect Extra Payment Via</label>
-                    <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                    <select value={paymentMethod} onChange={e => {
+                      setPaymentMethod(e.target.value);
+                      if (e.target.value === 'Split') setSplitCash(Math.round(netDiff / 2).toString());
+                    }}>
                       <option value="Cash">💵 Cash</option>
                       <option value="UPI">📱 UPI / GPay / PhonePe</option>
+                      <option value="Split">⚖️ Split (Cash + UPI)</option>
                     </select>
+                    {paymentMethod === 'Split' && (
+                      <div style={{ marginTop: '12px', padding: '12px', background: 'var(--off-white)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--dark)', marginBottom: '8px' }}>⚖️ Split Breakdown (Total to Pay: ₹{netDiff})</div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>💵 Cash Amount</label>
+                            <input 
+                              type="number" 
+                              placeholder="₹ Cash..." 
+                              value={splitCash}
+                              onChange={e => setSplitCash(e.target.value)}
+                              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border)', fontWeight: 'bold' }}
+                            />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>📱 GPay / UPI</label>
+                            <input 
+                              type="number" 
+                              value={Math.max(0, netDiff - (parseFloat(splitCash) || 0))}
+                              readOnly
+                              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border)', background: '#e9ecef', fontWeight: 'bold', color: '#004085' }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -517,9 +562,19 @@ const Exchanges = () => {
                 
                 return (
                   <div key={ret.id || idx} style={{ padding: '14px', background: '#faf8f5', border: '1px solid #ddd', borderRadius: '6px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px', color: '#666' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px', color: '#666', alignItems: 'center' }}>
                       <span>📅 {new Date(ret.created_at).toLocaleString('en-IN')}</span>
-                      <span className="badge badge-secondary">{ret.return_reason}</span>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span className="badge badge-secondary">{ret.return_reason}</span>
+                        <button 
+                          className="btn btn-secondary" 
+                          title="Delete Return Record"
+                          style={{ padding: '2px 6px', fontSize: '12px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}
+                          onClick={() => setDeleteReturnItem(ret)}
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: '#e74c3c' }}>
                       🔄 Returned: {prodInfo} (Qty: {ret.returned_qty})
@@ -821,6 +876,105 @@ const Exchanges = () => {
           );
         }
       })()}
+
+      {/* Delete Bill Confirmation Modal */}
+      {deleteBillItem && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', zIndex: 10000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div className="card" style={{ width: '420px', margin: 0, padding: '32px', textAlign: 'center', borderRadius: '16px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+            <div className="section-title" style={{ color: 'var(--danger)', fontSize: '20px', borderBottom: 'none', paddingBottom: 0, marginBottom: '12px', display: 'block' }}>Confirm Bill Deletion</div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px' }}>
+              Are you sure you want to permanently delete Bill #<strong style={{ color: 'var(--dark)' }}>{deleteBillItem.id.slice(0, 8).toUpperCase()}</strong> and all its associated items and returns?<br/><br/>
+              <strong style={{ color: '#DC2626', fontSize: '20px' }}>₹{Number(deleteBillItem.total_amount).toLocaleString('en-IN')}</strong><br/>
+              <span style={{ fontSize: '13px', color: '#6B7280', display: 'block', marginTop: '6px' }}>Customer: {deleteBillItem.customer_name || 'Walk-in'}</span>
+            </p>
+            
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button 
+                className="btn btn-secondary" 
+                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600' }} 
+                onClick={() => setDeleteBillItem(null)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-danger" 
+                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600', background: 'var(--danger)', color: 'var(--white)', border: 'none' }} 
+                onClick={async () => {
+                  try {
+                    await db.deleteBill(deleteBillItem.id);
+                    toast.success('Bill deleted successfully');
+                    setDeleteBillItem(null);
+                    loadBills();
+                  } catch (err) {
+                    toast.error('Failed to delete bill: ' + err.message);
+                  }
+                }}
+              >
+                🗑️ Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Return Record Confirmation Modal */}
+      {deleteReturnItem && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', zIndex: 10000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div className="card" style={{ width: '420px', margin: 0, padding: '32px', textAlign: 'center', borderRadius: '16px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+            <div className="section-title" style={{ color: 'var(--danger)', fontSize: '20px', borderBottom: 'none', paddingBottom: 0, marginBottom: '12px', display: 'block' }}>Confirm Return Deletion</div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px' }}>
+              Are you sure you want to permanently delete this return record?<br/><br/>
+              <strong style={{ color: 'var(--dark)', fontSize: '16px' }}>Reason: {deleteReturnItem.return_reason}</strong><br/>
+              <strong style={{ color: '#DC2626', fontSize: '18px' }}>Settlement: ₹{Math.abs(deleteReturnItem.net_amount || 0)}</strong>
+            </p>
+            
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button 
+                className="btn btn-secondary" 
+                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600' }} 
+                onClick={() => setDeleteReturnItem(null)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-danger" 
+                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600', background: 'var(--danger)', color: 'var(--white)', border: 'none' }} 
+                onClick={async () => {
+                  try {
+                    await db.deleteReturn(deleteReturnItem.id);
+                    toast.success('Return record deleted');
+                    const retId = deleteReturnItem.id;
+                    setDeleteReturnItem(null);
+                    if (viewingReturnHistory) {
+                      const updatedRets = viewingReturnHistory.returns.filter(r => r.id !== retId);
+                      if (updatedRets.length === 0) {
+                        setViewingReturnHistory(null);
+                      } else {
+                        setViewingReturnHistory({ ...viewingReturnHistory, returns: updatedRets });
+                      }
+                    }
+                    loadBills();
+                  } catch (err) {
+                    toast.error('Failed to delete return: ' + err.message);
+                  }
+                }}
+              >
+                🗑️ Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

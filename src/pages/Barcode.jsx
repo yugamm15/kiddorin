@@ -12,7 +12,7 @@ const BarcodePage = () => {
   const [searchName, setSearchName] = useState('');
   const [searchColor, setSearchColor] = useState('');
   const [searchSize, setSearchSize] = useState('');
-  const [printPaperSize, setPrintPaperSize] = useState('1.5x2');
+  const [printPaperSize, setPrintPaperSize] = useState('2x1.5');
   const [selectedIds, setSelectedIds] = useState([]);
   const printRef = useRef(null);
 
@@ -137,9 +137,7 @@ const BarcodePage = () => {
           <div className="form-group" style={{ flex: '0 0 auto' }}>
             <label>Paper / Sticker Size</label>
             <select value={printPaperSize} onChange={e => setPrintPaperSize(e.target.value)} style={{ height: '42px', fontWeight: 600 }}>
-              <option value="1.5x2">Thermal Roll (38mm × 50mm Vertical)</option>
               <option value="2x1.5">Thermal Roll (50mm × 38mm Horizontal)</option>
-              <option value="a4">Standard A4 Sheet (Grid)</option>
             </select>
           </div>
           <button className="btn btn-primary" onClick={printBarcodes} style={{ height: '42px', padding: '0 24px' }}>
@@ -278,18 +276,15 @@ const BarcodePage = () => {
           return (
             <div key={s.id} className="barcode-card">
               <canvas id={`barcanvas-${s.id}`}></canvas>
-              <div style={{ textAlign: 'center', marginTop: '1px', marginBottom: '2px', lineHeight: 1.05 }}>
+              <div style={{ textAlign: 'center', marginTop: '0px', marginBottom: '1px', lineHeight: 1.05 }}>
                 <div style={{ fontSize: printPaperSize === 'a4' ? '9px' : '6.5px', fontWeight: 800, color: '#000000', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 0 }}>Available Size</div>
                 <div style={{ fontSize: printPaperSize === 'a4' ? '11px' : '8.5px', fontWeight: 900, color: '#000000', wordBreak: 'break-word', padding: '0 2px', marginTop: 0 }}>{availSizes}</div>
               </div>
-              <div className="barcode-info" style={{ fontSize: printPaperSize === 'a4' ? '13px' : '10px', lineHeight: 1.2, textAlign: 'center', fontWeight: 800, color: '#000000' }}>
+              <div className="barcode-info" style={{ fontSize: printPaperSize === 'a4' ? '13px' : '10px', lineHeight: 1.1, textAlign: 'center', fontWeight: 800, color: '#000000', margin: '-2px 0 0px 0' }}>
                 {s.category} | {s.size} | {s.color}
               </div>
-              <div className="barcode-price" style={{ fontSize: printPaperSize === 'a4' ? '26px' : '19px', fontFamily: "'Arial Black', 'Impact', 'Trebuchet MS', sans-serif", margin: '1px 0', lineHeight: 1.1, fontWeight: 900, color: '#000000' }}>
+              <div className="barcode-price" style={{ fontSize: printPaperSize === 'a4' ? '26px' : '19px', fontFamily: "'Arial Black', 'Impact', 'Trebuchet MS', sans-serif", margin: '-7px 0 2px 0', lineHeight: 1, fontWeight: 900, color: '#000000' }}>
                 ₹{s.selling_price}
-              </div>
-              <div style={{ fontSize: printPaperSize === 'a4' ? '10px' : '7px', fontWeight: 800, color: '#000000', fontFamily: 'monospace' }}>
-                {s.barcode}
               </div>
             </div>
           );

@@ -455,6 +455,65 @@ class SupabaseDB {
     return data;
   }
 
+  async deleteBill(bill_id) {
+    if (!bill_id) return false;
+    // 1. First find and reverse any returns/exchanges linked to this bill
+    const { data: rets } = await supabase.from('returns_exchanges').select('id').eq('original_bill_id', bill_id);
+    if (rets && rets.length > 0) {
+      for (const r of rets) {
+        await this.deleteReturn(r.id);
+      }
+    }
+
+    // 2. Find all bill items and restore stock to inventory
+    const { data: bItems } = await supabase.from('bill_items').select('*').eq('bill_id', bill_id);
+    if (bItems && bItems.length > 0) {
+      for (const bi of bItems) {
+        if (bi.product_id) {
+          const { data: prod } = await supabase.from('products').select('quantity').eq('id', bi.product_id).maybeSingle();
+          if (prod) {
+            await supabase.from('products').update({ quantity: Number(prod.quantity) + Number(bi.quantity) }).eq('id', bi.product_id);
+          }
+        }
+      }
+    }
+
+    // 3. Delete bill items and bill record
+    await supabase.from('bill_items').delete().eq('bill_id', bill_id);
+    const { error } = await supabase.from('bills').delete().eq('id', bill_id);
+    if (error) throw error;
+    this.cache = {}; // invalidate cache
+    return true;
+  }
+
+  async deleteReturn(return_id) {
+    if (!return_id) return false;
+    // 1. Fetch return record to reverse stock changes
+    const { data: ret } = await supabase.from('returns_exchanges').select('*').eq('id', return_id).maybeSingle();
+    if (ret) {
+      // Reverse returned item stock (we added stock during return, so subtract it back)
+      if (ret.returned_product_id && ret.return_reason !== 'Defective / Damaged') {
+        const { data: retProd } = await supabase.from('products').select('quantity').eq('id', ret.returned_product_id).maybeSingle();
+        if (retProd) {
+          await supabase.from('products').update({ quantity: Math.max(0, Number(retProd.quantity) - Number(ret.returned_qty)) }).eq('id', ret.returned_product_id);
+        }
+      }
+      // Reverse exchanged item stock (we subtracted stock when issuing replacement, so add it back)
+      if (ret.exchanged_product_id) {
+        const { data: exProd } = await supabase.from('products').select('quantity').eq('id', ret.exchanged_product_id).maybeSingle();
+        if (exProd) {
+          await supabase.from('products').update({ quantity: Number(exProd.quantity) + Number(ret.exchanged_qty) }).eq('id', ret.exchanged_product_id);
+        }
+      }
+    }
+
+    // 2. Delete return record
+    const { error } = await supabase.from('returns_exchanges').delete().eq('id', return_id);
+    if (error) throw error;
+    this.cache = {}; // invalidate cache
+    return true;
+  }
+
   async processExchange(exchangeData) {
     // 1. Insert into returns_exchanges
     const { data: exRecord, error: exErr } = await supabase
