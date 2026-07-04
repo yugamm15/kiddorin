@@ -18,14 +18,22 @@ const BarcodePage = () => {
 
   useEffect(() => {
     const bId = user?.branch_id || user?.branch?.id;
-    if (bId) {
+    if (!bId) return;
+
+    const delayDebounceFn = setTimeout(() => {
       setLoading(true);
-      db.getProducts(bId).then(data => {
+      db.getProducts(bId, {
+        searchName,
+        searchColor,
+        searchSize
+      }).then(data => {
         setProducts(data || []);
         setLoading(false);
       }).catch(() => setLoading(false));
-    }
-  }, [user]);
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [user, searchName, searchColor, searchSize]);
 
   const filtered = products.filter(s => {
     const matchName = ((s.design_number || '') + " " + (s.category || '')).toLowerCase().includes((searchName || '').toLowerCase());

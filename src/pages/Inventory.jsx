@@ -25,13 +25,22 @@ const Inventory = () => {
   }, []);
 
   useEffect(() => {
-    if (user?.branch_id) {
-      db.getProducts(user.branch_id).then(data => {
+    if (!user?.branch_id) return;
+
+    const delayDebounceFn = setTimeout(() => {
+      setLoading(true);
+      db.getProducts(user.branch_id, {
+        searchName,
+        searchColor,
+        searchSize
+      }).then(data => {
         setProducts(data || []);
         setLoading(false);
-      });
-    }
-  }, [user]);
+      }).catch(() => setLoading(false));
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [user, searchName, searchColor, searchSize]);
 
   const openRestock = (product) => {
     setRestockProduct(product);

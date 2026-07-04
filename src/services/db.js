@@ -197,18 +197,44 @@ class SupabaseDB {
     return data && data.length > 0;
   }
 
-  async getProducts(branch_id, forceRefresh = false) {
-    if (!forceRefresh && this.cache[`products_${branch_id}`] && (Date.now() - this.cache[`products_${branch_id}`].ts < 60000)) {
-      return this.cache[`products_${branch_id}`].data;
+  async getProducts(branch_id, filters = {}) {
+    const hasFilters = filters.searchName || filters.searchColor || filters.searchSize;
+    const cacheKey = `products_${branch_id}`;
+    
+    if (!hasFilters && this.cache[cacheKey] && (Date.now() - this.cache[cacheKey].ts < 10000)) {
+      return this.cache[cacheKey].data;
     }
-    const { data, error } = await supabase
+
+    let query = supabase
       .from('products')
       .select('*')
       .eq('branch_id', branch_id)
       .eq('is_active', true);
+
+    if (filters.searchName) {
+      const term = filters.searchName.trim();
+      query = query.or(`design_number.ilike.%${term}%,category.ilike.%${term}%`);
+    }
+    if (filters.searchColor) {
+      query = query.ilike('color', `%${filters.searchColor.trim()}%`);
+    }
+    if (filters.searchSize) {
+      query = query.ilike('size', `%${filters.searchSize.trim()}%`);
+    }
+
+    // Always sort by created_at descending so that newly added items show up at the very top!
+    query = query.order('created_at', { ascending: false });
+
+    // Limit to 200 items to keep page rendering fast
+    query = query.limit(200);
+
+    const { data, error } = await query;
     if (error) throw error;
-    this.cache[`products_${branch_id}`] = { data, ts: Date.now() };
-    return data;
+
+    if (!hasFilters) {
+      this.cache[cacheKey] = { data, ts: Date.now() };
+    }
+    return data || [];
   }
 
   async deleteProduct(product_id) {
