@@ -84,7 +84,7 @@ const BarcodePage = () => {
               displayValue: false
             });
           }
-        } catch (err) {}
+        } catch (err) { }
       }
     });
   }, [selectedIds, products, printPaperSize]);
@@ -281,7 +281,7 @@ const BarcodePage = () => {
                 <div style={{ fontSize: printPaperSize === 'a4' ? '11px' : '8.5px', fontWeight: 900, color: '#000000', wordBreak: 'break-word', padding: '0 2px', marginTop: 0 }}>{availSizes}</div>
               </div>
               <div className="barcode-info" style={{ fontSize: printPaperSize === 'a4' ? '13px' : '10px', lineHeight: 1.1, textAlign: 'center', fontWeight: 800, color: '#000000', margin: '-2px 0 0px 0' }}>
-                {s.category} | {s.size} | {s.color}
+                {s.design_number} | {s.size} | {s.color}
               </div>
               <div className="barcode-price" style={{ fontSize: printPaperSize === 'a4' ? '26px' : '19px', fontFamily: "'Arial Black', 'Impact', 'Trebuchet MS', sans-serif", margin: '-7px 0 2px 0', lineHeight: 1, fontWeight: 900, color: '#000000' }}>
                 ₹{s.selling_price}
