@@ -46,7 +46,7 @@ const Dealers = () => {
   return (
     <div className="page active" id="dealers-page">
       <div className="page-title">Dealer Management</div>
-      <div className="page-sub">Manage suppliers and view purchase history</div>
+      <div className="page-sub">Manage dealers and view purchase history</div>
       
       <div style={{ marginBottom: '20px' }}>
         <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>

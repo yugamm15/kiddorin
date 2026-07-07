@@ -47,7 +47,7 @@ const Reports = () => {
     { key: 'sales', icon: '📈', title: 'Sale Report', desc: 'Customer margins & sales' },
     { key: 'payment', icon: '💳', title: 'Payment Report', desc: 'Cash vs UPI breakdown' },
     { key: 'branch', icon: '🏪', title: 'Branch-wise Report', desc: 'Store sales comparison' },
-    { key: 'purchase', icon: '🛒', title: 'Purchase Report', desc: 'Supplier stock inflows' },
+    { key: 'purchase', icon: '🛒', title: 'Purchase Report', desc: 'Dealer stock inflows' },
     { key: 'profit', icon: '💰', title: 'Profit & Loss Report', desc: 'True net earnings' },
     { key: 'product', icon: '👕', title: 'Product-wise Report', desc: 'Category movement' },
     { key: 'transactions', icon: '🧾', title: 'All Transactions', desc: 'Inflows & outflows' }
@@ -97,6 +97,49 @@ const Reports = () => {
   const dealerMap = {};
   dealers.forEach(d => dealerMap[d.id] = d.name);
 
+  const getDealerName = (dealerId, designNumber, fallback = 'Direct') => {
+    if (dealerId && dealerMap[dealerId]) return dealerMap[dealerId];
+    if (!designNumber) return fallback;
+    
+    const cleanDn = designNumber.trim().toUpperCase();
+    const prefixMatch = cleanDn.match(/^([A-Z]+)/);
+    if (!prefixMatch) return fallback;
+    const prefix = prefixMatch[1];
+
+    // 1. Exact match on prefix
+    let matched = dealers.find(d => d.name.toUpperCase() === prefix);
+    if (matched) return matched.name;
+
+    // 2. Prefix is initials of the dealer name
+    matched = dealers.find(d => {
+      const words = d.name.toUpperCase().split(/\s+/);
+      const initials = words.map(w => w[0]).join('');
+      if (initials === prefix) return true;
+      if (words.length > 1) {
+        const partialInitials = words.slice(0, prefix.length).map(w => w[0]).join('');
+        if (partialInitials === prefix) return true;
+      }
+      return false;
+    });
+    if (matched) return matched.name;
+
+    // 3. Dealer name starts with prefix
+    matched = dealers.find(d => d.name.toUpperCase().startsWith(prefix));
+    if (matched) return matched.name;
+
+    // 4. Special manual overrides
+    if (prefix === 'HC') {
+      const d = dealers.find(d => d.name.toUpperCase() === 'HUCAI');
+      if (d) return d.name;
+    }
+    if (prefix === 'BY') {
+      const d = dealers.find(d => d.name.toUpperCase() === 'BEIYA');
+      if (d) return d.name;
+    }
+
+    return fallback;
+  };
+
   const purchaseMap = {};
   purchases.forEach(p => {
     if (!purchaseMap[p.product_id]) purchaseMap[p.product_id] = p;
@@ -124,19 +167,19 @@ const Reports = () => {
     const filename = `${currentReport}_report_${new Date().toISOString().split('T')[0]}.csv`;
 
     if (currentReport === 'stock') {
-      rows.push(["Date", "Supplier Name", "Design Number", "Color", "Category", "Cost Price", "Selling Price", "Quantity"]);
+      rows.push(["Date", "Dealer Name", "Design Number", "Color", "Size", "Category", "Cost Price", "Selling Price", "Quantity"]);
       getFilteredStock().forEach(p => {
         rows.push([
           p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN') : '-',
-          dealerMap[p.dealer_id] || 'Direct / Unknown',
-          p.design_number, p.color, p.category, p.purchase_price, p.selling_price, p.quantity
+          getDealerName(p.dealer_id, p.design_number, 'Direct / Unknown'),
+          p.design_number, p.color, p.size || '-', p.category, p.purchase_price, p.selling_price, p.quantity
         ]);
       });
     } else if (currentReport === 'sales') {
-      rows.push(["Date of Buy", "Date of Sale", "Supplier Name", "Customer Name", "Contact", "Cost Price", "Sale Price", "Profit", "Payment Mode"]);
+      rows.push(["Date of Buy", "Date of Sale", "Dealer Name", "Design Number", "Size", "Customer Name", "Contact", "Cost Price", "Sale Price", "Profit", "Payment Mode"]);
       getFilteredSalesItems().forEach(item => {
         rows.push([
-          item.buyDate, item.saleDate, item.supplier, item.customer, item.contact, item.cost, item.salePrice, item.profit, item.paymentMethod
+          item.buyDate, item.saleDate, item.dealer, item.design, item.size, item.customer, item.contact, item.cost, item.salePrice, item.profit, item.paymentMethod
         ]);
       });
     } else if (currentReport === 'payment') {
@@ -146,8 +189,8 @@ const Reports = () => {
       rows.push(["Branch Name", "Total Revenue", "Total Bills", "Stock Items"]);
       getFilteredBranchStats().forEach(b => rows.push([b.name, b.revenue, b.billsCount, b.stockItems]));
     } else if (currentReport === 'purchase') {
-      rows.push(["Purchase Date", "Supplier Name", "Design Number", "Category", "Quantity Bought", "Purchase Price", "Total Cost"]);
-      getFilteredPurchases().forEach(p => rows.push([p.dateStr, p.supplier, p.design, p.category, p.qty, p.price, p.total]));
+      rows.push(["Purchase Date", "Dealer Name", "Design Number", "Category", "Quantity Bought", "Purchase Price", "Total Cost"]);
+      getFilteredPurchases().forEach(p => rows.push([p.dateStr, p.dealer, p.design, p.category, p.qty, p.price, p.total]));
     } else if (currentReport === 'profit') {
       rows.push(["Date", "Sales Revenue", "Cost of Goods", "Shop Expenses", "Net Profit/Loss"]);
       getFilteredProfitLoss().forEach(pl => rows.push([pl.date, pl.revenue, pl.cogs, pl.expenses, pl.net]));
@@ -181,8 +224,8 @@ const Reports = () => {
   const getFilteredStock = () => {
     return products.filter(p => {
       if (!filterByBranchAndDate(p.created_at, p.branch_id)) return false;
-      const supplierName = dealerMap[p.dealer_id] || 'Direct';
-      return matchSearch([p.design_number, p.color, p.category, supplierName, p.branches?.name]);
+      const dealerName = getDealerName(p.dealer_id, p.design_number, 'Direct');
+      return matchSearch([p.design_number, p.color, p.size, p.category, dealerName, p.branches?.name]);
     });
   };
 
@@ -194,22 +237,23 @@ const Reports = () => {
       
       (bill.bill_items || []).forEach(bi => {
         const prod = bi.products || {};
-        const supplierName = dealerMap[prod.dealer_id] || 'Direct / Unknown';
+        const dealerName = getDealerName(prod.dealer_id, prod.design_number, 'Direct / Unknown');
         const buyDate = prod.created_at ? new Date(prod.created_at).toLocaleDateString('en-IN') : '-';
         const saleDate = bill.created_at ? new Date(bill.created_at).toLocaleDateString('en-IN') : '-';
         const cost = Number(prod.purchase_price || 0) * bi.quantity;
         const salePrice = Number(bi.price_at_sale || 0) * bi.quantity;
         const profit = salePrice - cost;
 
-        if (matchSearch([prod.design_number, prod.category, supplierName, bill.customer_name, bill.customer_phone, bill.payment_method])) {
+        if (matchSearch([prod.design_number, prod.size, prod.category, dealerName, bill.customer_name, bill.customer_phone, bill.payment_method])) {
           itemsList.push({
             id: bi.id,
             buyDate,
             saleDate,
-            supplier: supplierName,
+            dealer: dealerName,
             customer: bill.customer_name || 'Walk-in',
             contact: bill.customer_phone || '-',
             design: prod.design_number || 'Item',
+            size: prod.size || '-',
             qty: bi.quantity,
             cost,
             salePrice,
@@ -281,13 +325,13 @@ const Reports = () => {
     purchases.forEach(p => {
       if (!filterByBranchAndDate(p.date || p.created_at, p.branch_id)) return;
       const prod = products.find(prod => prod.id === p.product_id) || {};
-      const supplierName = dealerMap[p.dealer_id] || dealerMap[prod.dealer_id] || 'Direct';
+      const dealerName = getDealerName(p.dealer_id || prod.dealer_id, p.design_number || prod.design_number, 'Direct');
       
-      if (matchSearch([prod.design_number, prod.category, supplierName])) {
+      if (matchSearch([prod.design_number, prod.category, dealerName])) {
         list.push({
           id: p.id,
           dateStr: (p.date || p.created_at) ? new Date(p.date || p.created_at).toLocaleDateString('en-IN') : '-',
-          supplier: supplierName,
+          dealer: dealerName,
           design: prod.design_number || 'Unknown',
           category: prod.category || 'Apparel',
           qty: p.quantity,
@@ -446,21 +490,22 @@ const Reports = () => {
           {renderChart('bar', data.slice(0, 15).map(p => ({ Design: p.design_number, Qty: p.quantity })), 'Design', 'Qty')}
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Date</th><th>Supplier Name</th><th>Design Number</th><th>Color</th><th>Category</th><th>Cost Price</th><th>Sell Price</th><th>Stock Qty</th></tr></thead>
+              <thead><tr><th>Date</th><th>Dealer Name</th><th>Design Number</th><th>Color</th><th>Size</th><th>Category</th><th>Cost Price</th><th>Sell Price</th><th>Stock Qty</th></tr></thead>
               <tbody>
                 {data.map(p => (
                   <tr key={p.id}>
                     <td>{p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN') : '-'}</td>
-                    <td style={{ fontWeight: 600, color: 'var(--primary)' }}>🏢 {dealerMap[p.dealer_id] || 'Direct'}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--primary)' }}>🏢 {getDealerName(p.dealer_id, p.design_number, 'Direct')}</td>
                     <td><strong>{p.design_number}</strong></td>
                     <td>{p.color}</td>
+                    <td>{p.size || '-'}</td>
                     <td><span className="badge badge-secondary">{p.category}</span></td>
                     <td>₹{Number(p.purchase_price).toLocaleString('en-IN')}</td>
                     <td style={{ color: 'var(--success)', fontWeight: 700 }}>₹{Number(p.selling_price).toLocaleString('en-IN')}</td>
                     <td><span className={`badge ${p.quantity > 0 ? 'badge-green' : 'badge-red'}`}>{p.quantity} Units</span></td>
                   </tr>
                 ))}
-                {data.length === 0 && <tr><td colSpan="8" style={{ textAlign: 'center', padding: '20px' }}>No stock records match filter</td></tr>}
+                {data.length === 0 && <tr><td colSpan="9" style={{ textAlign: 'center', padding: '20px' }}>No stock records match filter</td></tr>}
               </tbody>
             </table>
           </div>
@@ -482,23 +527,25 @@ const Reports = () => {
           </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Buy Date</th><th>Sale Date</th><th>Supplier</th><th>Customer</th><th>Contact</th><th>Design (Qty)</th><th>Cost</th><th>Sale Price</th><th>Profit</th><th>Mode</th></tr></thead>
+              <thead><tr><th>Buy Date</th><th>Sale Date</th><th>Dealer Name</th><th>Customer</th><th>Contact</th><th>Design Number</th><th>Size</th><th>Qty</th><th>Cost</th><th>Sale Price</th><th>Profit</th><th>Mode</th></tr></thead>
               <tbody>
                 {data.map((item, idx) => (
                   <tr key={idx}>
                     <td>{item.buyDate}</td>
                     <td style={{ fontWeight: 600 }}>{item.saleDate}</td>
-                    <td style={{ color: 'var(--primary)' }}>{item.supplier}</td>
+                    <td style={{ color: 'var(--primary)' }}>{item.dealer}</td>
                     <td>👤 {item.customer}</td>
                     <td>{item.contact}</td>
-                    <td><strong>{item.design}</strong> ({item.qty})</td>
+                    <td><strong>{item.design}</strong></td>
+                    <td>{item.size}</td>
+                    <td>{item.qty}</td>
                     <td>₹{item.cost.toLocaleString('en-IN')}</td>
                     <td style={{ fontWeight: 700 }}>₹{item.salePrice.toLocaleString('en-IN')}</td>
                     <td style={{ color: item.profit >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 700 }}>₹{item.profit.toLocaleString('en-IN')}</td>
                     <td><span className="badge badge-blue">{item.paymentMethod}</span></td>
                   </tr>
                 ))}
-                {data.length === 0 && <tr><td colSpan="10" style={{ textAlign: 'center', padding: '20px' }}>No sales records match filter</td></tr>}
+                {data.length === 0 && <tr><td colSpan="12" style={{ textAlign: 'center', padding: '20px' }}>No sales records match filter</td></tr>}
               </tbody>
             </table>
           </div>
@@ -567,12 +614,12 @@ const Reports = () => {
           </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Purchase Date</th><th>Supplier Name</th><th>Design Number</th><th>Category</th><th>Qty Bought</th><th>Unit Price</th><th>Total Cost</th></tr></thead>
+              <thead><tr><th>Purchase Date</th><th>Dealer Name</th><th>Design Number</th><th>Category</th><th>Qty Bought</th><th>Unit Price</th><th>Total Cost</th></tr></thead>
               <tbody>
                 {data.map((p, idx) => (
                   <tr key={idx}>
                     <td>{p.dateStr}</td>
-                    <td style={{ fontWeight: 600, color: 'var(--primary)' }}>🏢 {p.supplier}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--primary)' }}>🏢 {p.dealer}</td>
                     <td><strong>{p.design}</strong></td>
                     <td><span className="badge badge-secondary">{p.category}</span></td>
                     <td>{p.qty} Units</td>
@@ -714,7 +761,7 @@ const Reports = () => {
           <input 
             type="text" 
             className="form-control" 
-            placeholder="🔍 Search across active report records (e.g. design number, supplier, customer name, phone, category)..." 
+            placeholder="🔍 Search across active report records (e.g. design number, dealer name, customer name, phone, category)..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{ width: '100%', marginBottom: 0, backgroundColor: 'var(--white)', padding: '12px 18px', fontSize: '14px', borderRadius: '8px', border: '1.5px solid var(--border)' }}
