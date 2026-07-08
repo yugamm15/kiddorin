@@ -508,7 +508,10 @@ const Exchanges = () => {
                   <tr>
                     <td style={{ padding: '6px 0' }}>
                       <span style={{ color: '#e74c3c', fontWeight: 600 }}>RETURNED:</span> {completedExchange.returnedItem?.products?.category} ({completedExchange.returnedItem?.products?.size})
-                      <div style={{ fontSize: '9px', color: '#666' }}>Reason: {completedExchange.returnReason}</div>
+                      {completedExchange.returnedItem?.products?.design_number && (
+                        <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{completedExchange.returnedItem.products.design_number}</div>
+                      )}
+                      <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>Reason: {completedExchange.returnReason}</div>
                     </td>
                     <td style={{ textAlign: 'right', color: '#e74c3c' }}>-₹{completedExchange.returnedItem?.price_at_sale}</td>
                   </tr>
@@ -516,6 +519,9 @@ const Exchanges = () => {
                     <tr>
                       <td style={{ padding: '6px 0' }}>
                         <span style={{ color: '#27ae60', fontWeight: 600 }}>ISSUED:</span> {completedExchange.exchangedItem.category} ({completedExchange.exchangedItem.size})
+                        {completedExchange.exchangedItem.design_number && (
+                          <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{completedExchange.exchangedItem.design_number}</div>
+                        )}
                       </td>
                       <td style={{ textAlign: 'right', color: '#27ae60' }}>+₹{completedExchange.exchangedItem.selling_price}</td>
                     </tr>
@@ -558,7 +564,9 @@ const Exchanges = () => {
               {viewingReturnHistory.returns.map((ret, idx) => {
                 const bItems = viewingReturnHistory.bill.bill_items || [];
                 const matchItem = bItems.find(bi => bi.product_id === ret.returned_product_id || bi.products?.id === ret.returned_product_id);
-                const prodInfo = matchItem?.products ? `${matchItem.products.category} (${matchItem.products.size} ${matchItem.products.color})` : `ID #${(ret.returned_product_id||'').slice(0,8)}`;
+                const prodInfo = matchItem?.products 
+                  ? `${matchItem.products.category} (${matchItem.products.size} ${matchItem.products.color})${matchItem.products.design_number ? ` | Design: #${matchItem.products.design_number}` : ''}` 
+                  : `ID #${(ret.returned_product_id||'').slice(0,8)}`;
                 
                 return (
                   <div key={ret.id || idx} style={{ padding: '14px', background: '#faf8f5', border: '1px solid #ddd', borderRadius: '6px' }}>
@@ -581,7 +589,7 @@ const Exchanges = () => {
                     </div>
                     {ret.exchanged_product_id && (
                       <div style={{ fontSize: '13px', fontWeight: 600, color: '#27ae60', marginTop: '4px' }}>
-                        🎁 Replacement Issued (ID #{ret.exchanged_product_id.slice(0,8)})
+                        🎁 Replacement Issued: {ret.exchanged_product ? `${ret.exchanged_product.category} (${ret.exchanged_product.size} ${ret.exchanged_product.color})${ret.exchanged_product.design_number ? ` | Design: #${ret.exchanged_product.design_number}` : ''}` : `ID #${ret.exchanged_product_id.slice(0,8)}`}
                       </div>
                     )}
                     <div style={{ borderTop: '1px dashed #ccc', marginTop: '10px', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '13px' }}>
@@ -702,7 +710,10 @@ const Exchanges = () => {
                       <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
                         <div style={{ fontWeight: 700 }}>RETURNED</div>
                         <div>{viewingBillPreview.returnedItem?.products?.category} ({viewingBillPreview.returnedItem?.products?.size})</div>
-                        <div style={{ fontSize: '9px', color: '#666' }}>Reason: {viewingBillPreview.returnReason}</div>
+                        {viewingBillPreview.returnedItem?.products?.design_number && (
+                          <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{viewingBillPreview.returnedItem.products.design_number}</div>
+                        )}
+                        <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>Reason: {viewingBillPreview.returnReason}</div>
                       </td>
                       <td style={{ textAlign: 'right', color: '#e74c3c' }}>-₹{viewingBillPreview.returnedItem?.price_at_sale}</td>
                     </tr>
@@ -711,6 +722,9 @@ const Exchanges = () => {
                         <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
                           <div style={{ fontWeight: 700 }}>ISSUED</div>
                           <div>{viewingBillPreview.exchangedItem.category} ({viewingBillPreview.exchangedItem.size})</div>
+                          {viewingBillPreview.exchangedItem.design_number && (
+                            <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{viewingBillPreview.exchangedItem.design_number}</div>
+                          )}
                         </td>
                         <td style={{ textAlign: 'right', color: '#27ae60' }}>+₹{viewingBillPreview.exchangedItem.selling_price}</td>
                       </tr>
@@ -848,7 +862,10 @@ const Exchanges = () => {
                     <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
                       <div style={{ fontWeight: 700 }}>RETURNED</div>
                       <div>{printData.returnedItem?.products?.category} ({printData.returnedItem?.products?.size})</div>
-                      <div style={{ fontSize: '9px', color: '#444' }}>Reason: {printData.returnReason}</div>
+                      {printData.returnedItem?.products?.design_number && (
+                        <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>Design: #{printData.returnedItem.products.design_number}</div>
+                      )}
+                      <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>Reason: {printData.returnReason}</div>
                     </td>
                     <td style={{ textAlign: 'right' }}>-₹{printData.returnedItem?.price_at_sale}</td>
                   </tr>
@@ -857,6 +874,9 @@ const Exchanges = () => {
                       <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
                         <div style={{ fontWeight: 700 }}>ISSUED</div>
                         <div>{printData.exchangedItem.category} ({printData.exchangedItem.size})</div>
+                        {printData.exchangedItem.design_number && (
+                          <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>Design: #{printData.exchangedItem.design_number}</div>
+                        )}
                       </td>
                       <td style={{ textAlign: 'right' }}>+₹{printData.exchangedItem.selling_price}</td>
                     </tr>

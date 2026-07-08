@@ -465,8 +465,7 @@ class SupabaseDB {
       .from('bills')
       .select('*, bill_items(*, products(*))')
       .eq('branch_id', branch_id)
-      .order('created_at', { ascending: false })
-      .limit(50);
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
     return data || [];
