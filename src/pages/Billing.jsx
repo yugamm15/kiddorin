@@ -437,10 +437,10 @@ const Billing = () => {
           <div className="pb-header">
             <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '180px', maxHeight: '65px', objectFit: 'contain', display: 'block', margin: '0 auto 12px auto' }} />
             <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '12px' }}>
-              G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009
+              {user?.branch?.address || 'G-69 , The Boulevard , Nr. Pratham Circle, Green City Road, Pal, Surat, Gujarat 395009'}
             </div>
             <div style={{ fontSize: '10px', fontWeight: '600' }}>
-              +91 94283 96273 | +91 94276 56615
+              {user?.branch?.phone || '+91 94283 96273 | +91 94276 56615'}
             </div>
           </div>
           <div className="pb-details">
