@@ -94,6 +94,8 @@ const Exchanges = () => {
         paymentMethod: latestRet.payment_method || 'Store Credit Note'
       });
     } else {
+      const subtotal = (bill.bill_items || []).reduce((sum, bi) => sum + Number(bi.price_at_sale || 0) * bi.quantity, 0);
+      const discount = Math.max(0, subtotal - Number(bill.total_amount || 0));
       setViewingBillPreview({
         type: 'sale',
         id: bill.id,
@@ -101,6 +103,8 @@ const Exchanges = () => {
         customerName: bill.customer_name || 'Walk-in Customer',
         customerPhone: bill.customer_phone || '',
         payment: bill.payment_method || 'Cash',
+        subtotal: subtotal,
+        discount: discount,
         total: Number(bill.total_amount || 0),
         items: (bill.bill_items || []).map(bi => ({
           category: bi.products?.category || 'Item',
@@ -169,7 +173,7 @@ const Exchanges = () => {
       toast.success('Exchange processed successfully!');
 
       setCompletedExchange({
-        id: result?.id || 'EX-' + Math.floor(Math.random()*10000),
+        id: result?.id || 'EX-' + Math.floor(Math.random() * 10000),
         date: new Date().toLocaleString('en-IN'),
         customerName: customerName.trim() || selectedBill?.customer_name || 'Walk-in Customer',
         customerPhone: customerPhone.trim() || selectedBill?.customer_phone || '',
@@ -203,9 +207,9 @@ const Exchanges = () => {
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
             <div className="section-title" style={{ margin: 0 }}>Select Past Bill / Customer</div>
-            <input 
-              type="text" 
-              placeholder="🔍 Search Customer Name, Phone, or Bill #..." 
+            <input
+              type="text"
+              placeholder="🔍 Search Customer Name, Phone, or Bill #..."
               value={searchCustomer}
               onChange={e => setSearchCustomer(e.target.value)}
               style={{ width: '320px', maxWidth: '100%' }}
@@ -247,8 +251,8 @@ const Exchanges = () => {
                           {billRets.length === 0 ? (
                             <span style={{ color: '#ccc' }}>—</span>
                           ) : (
-                            <button 
-                              className="btn btn-secondary" 
+                            <button
+                              className="btn btn-secondary"
                               style={{ padding: '4px 10px', fontSize: '11px', background: '#fff3cd', color: '#856404', border: '1px solid #ffeeba', fontWeight: 600 }}
                               onClick={() => setViewingReturnHistory({ bill, returns: billRets })}
                             >
@@ -258,9 +262,9 @@ const Exchanges = () => {
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <button 
-                              className="btn btn-secondary" 
-                              style={{ padding: '6px 12px', fontSize: '11px' }} 
+                            <button
+                              className="btn btn-secondary"
+                              style={{ padding: '6px 12px', fontSize: '11px' }}
                               onClick={() => handleViewBill(bill, billRets)}
                             >
                               👁️ View Bill
@@ -272,8 +276,8 @@ const Exchanges = () => {
                                 🔄 Return / Exchange
                               </button>
                             )}
-                            <button 
-                              className="btn btn-secondary" 
+                            <button
+                              className="btn btn-secondary"
                               title="Delete Bill"
                               style={{ padding: '6px 10px', fontSize: '13px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}
                               onClick={() => setDeleteBillItem(bill)}
@@ -308,7 +312,7 @@ const Exchanges = () => {
             {/* LEFT COLUMN: RETURNED ITEM */}
             <div className="card" style={{ margin: 0 }}>
               <div className="section-title">Step 1: Item Being Returned</div>
-              
+
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ fontSize: '11px', fontWeight: 600, color: '#666', textTransform: 'uppercase' }}>Select Item from Customer's Bill:</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
@@ -316,7 +320,7 @@ const Exchanges = () => {
                     const prod = bItem.products || {};
                     const isSelected = returnedItem?.id === bItem.id;
                     return (
-                      <div 
+                      <div
                         key={bItem.id || i}
                         onClick={() => setReturnedItem(bItem)}
                         style={{
@@ -364,13 +368,13 @@ const Exchanges = () => {
             {/* RIGHT COLUMN: NEW REPLACEMENT ITEM */}
             <div className="card" style={{ margin: 0 }}>
               <div className="section-title" style={{ fontSize: '14px' }}>Step 2: New Replacement Item <span style={{ fontSize: '11px', fontWeight: 400, color: '#888' }}>(Optional - Leave empty for Store Credit Return)</span></div>
-              
+
               <div className="form-group" style={{ marginBottom: '16px' }}>
                 <label>Scan Replacement Barcode</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Scan or enter barcode..." 
+                  <input
+                    type="text"
+                    placeholder="Scan or enter barcode..."
                     value={exchangeBarcode}
                     onChange={e => setExchangeBarcode(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleScanNewItem()}
@@ -444,9 +448,9 @@ const Exchanges = () => {
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <div style={{ flex: 1 }}>
                             <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>💵 Cash Amount</label>
-                            <input 
-                              type="number" 
-                              placeholder="₹ Cash..." 
+                            <input
+                              type="number"
+                              placeholder="₹ Cash..."
                               value={splitCash}
                               onChange={e => setSplitCash(e.target.value)}
                               style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border)', fontWeight: 'bold' }}
@@ -454,8 +458,8 @@ const Exchanges = () => {
                           </div>
                           <div style={{ flex: 1 }}>
                             <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>📱 GPay / UPI</label>
-                            <input 
-                              type="number" 
+                            <input
+                              type="number"
                               value={Math.max(0, netDiff - (parseFloat(splitCash) || 0))}
                               readOnly
                               style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border)', background: '#e9ecef', fontWeight: 'bold', color: '#004085' }}
@@ -467,8 +471,8 @@ const Exchanges = () => {
                   </div>
                 )}
 
-                <button 
-                  className="btn btn-primary" 
+                <button
+                  className="btn btn-primary"
                   style={{ width: '100%', height: '46px', fontSize: '14px', fontWeight: 700 }}
                   onClick={handleConfirmExchange}
                   disabled={processing || !returnedItem}
@@ -483,7 +487,7 @@ const Exchanges = () => {
 
       {/* RECEIPT MODAL */}
       {completedExchange && (
-        <div style={{ position: 'fixed', top:0, left:0, right:0, bottom:0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="card" style={{ width: '420px', maxWidth: '95%', margin: 0, padding: '24px' }}>
             <div className="exchange-slip-preview" style={{ fontFamily: 'Montserrat, sans-serif', color: '#000' }}>
               <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '12px', marginBottom: '12px' }}>
@@ -535,7 +539,7 @@ const Exchanges = () => {
               </div>
 
               <div style={{ textAlign: 'center', fontSize: '9px', color: '#666' }}>
-                Thank you for shopping with Kiddorin!<br/>Exchanged goods are non-refundable.
+                Thank you for shopping with Kiddorin!<br />Exchanged goods are non-refundable.
                 <div style={{ marginTop: '4px', fontWeight: '600', color: '#000' }}>Follow us on Instagram @Kiddorin</div>
               </div>
             </div>
@@ -550,11 +554,11 @@ const Exchanges = () => {
 
       {/* RETURN HISTORY MODAL */}
       {viewingReturnHistory && (
-        <div style={{ position: 'fixed', top:0, left:0, right:0, bottom:0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="card" style={{ width: '520px', maxWidth: '95%', margin: 0, padding: '24px', maxHeight: '85vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '12px', marginBottom: '16px' }}>
               <div>
-                <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--dark)' }}>Return History for Bill #{viewingReturnHistory.bill.id.slice(0,8).toUpperCase()}</div>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--dark)' }}>Return History for Bill #{viewingReturnHistory.bill.id.slice(0, 8).toUpperCase()}</div>
                 <div style={{ fontSize: '12px', color: '#666' }}>Customer: {viewingReturnHistory.bill.customer_name || 'Walk-in'}</div>
               </div>
               <button className="btn btn-secondary" style={{ padding: '4px 10px' }} onClick={() => setViewingReturnHistory(null)}>✕</button>
@@ -564,18 +568,18 @@ const Exchanges = () => {
               {viewingReturnHistory.returns.map((ret, idx) => {
                 const bItems = viewingReturnHistory.bill.bill_items || [];
                 const matchItem = bItems.find(bi => bi.product_id === ret.returned_product_id || bi.products?.id === ret.returned_product_id);
-                const prodInfo = matchItem?.products 
-                  ? `${matchItem.products.category} (${matchItem.products.size} ${matchItem.products.color})${matchItem.products.design_number ? ` | Design: #${matchItem.products.design_number}` : ''}` 
-                  : `ID #${(ret.returned_product_id||'').slice(0,8)}`;
-                
+                const prodInfo = matchItem?.products
+                  ? `${matchItem.products.category} (${matchItem.products.size} ${matchItem.products.color})${matchItem.products.design_number ? ` | Design: #${matchItem.products.design_number}` : ''}`
+                  : `ID #${(ret.returned_product_id || '').slice(0, 8)}`;
+
                 return (
                   <div key={ret.id || idx} style={{ padding: '14px', background: '#faf8f5', border: '1px solid #ddd', borderRadius: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '8px', color: '#666', alignItems: 'center' }}>
                       <span>📅 {new Date(ret.created_at).toLocaleString('en-IN')}</span>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <span className="badge badge-secondary">{ret.return_reason}</span>
-                        <button 
-                          className="btn btn-secondary" 
+                        <button
+                          className="btn btn-secondary"
                           title="Delete Return Record"
                           style={{ padding: '2px 6px', fontSize: '12px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}
                           onClick={() => setDeleteReturnItem(ret)}
@@ -589,7 +593,7 @@ const Exchanges = () => {
                     </div>
                     {ret.exchanged_product_id && (
                       <div style={{ fontSize: '13px', fontWeight: 600, color: '#27ae60', marginTop: '4px' }}>
-                        🎁 Replacement Issued: {ret.exchanged_product ? `${ret.exchanged_product.category} (${ret.exchanged_product.size} ${ret.exchanged_product.color})${ret.exchanged_product.design_number ? ` | Design: #${ret.exchanged_product.design_number}` : ''}` : `ID #${ret.exchanged_product_id.slice(0,8)}`}
+                        🎁 Replacement Issued: {ret.exchanged_product ? `${ret.exchanged_product.category} (${ret.exchanged_product.size} ${ret.exchanged_product.color})${ret.exchanged_product.design_number ? ` | Design: #${ret.exchanged_product.design_number}` : ''}` : `ID #${ret.exchanged_product_id.slice(0, 8)}`}
                       </div>
                     )}
                     <div style={{ borderTop: '1px dashed #ccc', marginTop: '10px', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '13px' }}>
@@ -610,7 +614,7 @@ const Exchanges = () => {
 
       {/* BILL PREVIEW MODAL */}
       {viewingBillPreview && (
-        <div style={{ position: 'fixed', top:0, left:0, right:0, bottom:0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="card" style={{ width: '420px', maxWidth: '95%', margin: 0, padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
             {viewingBillPreview.type === 'sale' ? (
               <div className="exchange-slip-preview" style={{ fontFamily: 'Montserrat, sans-serif', color: '#000' }}>
@@ -628,7 +632,7 @@ const Exchanges = () => {
                 </div>
 
                 <div style={{ fontSize: '12px', marginBottom: '12px' }}>
-                  <strong>Customer:</strong> {viewingBillPreview.customerName} {viewingBillPreview.customerPhone ? `(${viewingBillPreview.customerPhone})` : ''}<br/>
+                  <strong>Customer:</strong> {viewingBillPreview.customerName} {viewingBillPreview.customerPhone ? `(${viewingBillPreview.customerPhone})` : ''}<br />
                   <strong>Payment:</strong> {viewingBillPreview.payment.toUpperCase()}
                 </div>
 
@@ -669,13 +673,25 @@ const Exchanges = () => {
                   </tbody>
                 </table>
 
+                {viewingBillPreview.discount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: '#555' }}>
+                    <span>Subtotal:</span>
+                    <span>₹{viewingBillPreview.subtotal.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {viewingBillPreview.discount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: '#555' }}>
+                    <span>Discount:</span>
+                    <span>-₹{viewingBillPreview.discount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
                 <div style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '8px 0', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginBottom: '16px' }}>
                   <span>Total Amount:</span>
                   <span>₹{viewingBillPreview.total.toLocaleString('en-IN')}</span>
                 </div>
 
                 <div style={{ textAlign: 'center', fontSize: '9px', color: '#666' }}>
-                  Thank you for shopping with us!<br/>No Return | No Exchange
+                  Thank you for shopping with us!<br />No Return | No Exchange
                   <div style={{ marginTop: '4px', fontWeight: '600', color: '#000' }}>Follow us on Instagram @Kiddorin</div>
                 </div>
               </div>
@@ -738,7 +754,7 @@ const Exchanges = () => {
                 </div>
 
                 <div style={{ textAlign: 'center', fontSize: '9px', color: '#666' }}>
-                  Thank you for shopping with Kiddorin!<br/>Exchanged goods are non-refundable.
+                  Thank you for shopping with Kiddorin!<br />Exchanged goods are non-refundable.
                   <div style={{ marginTop: '4px', fontWeight: '600', color: '#000' }}>Follow us on Instagram @Kiddorin</div>
                 </div>
               </div>
@@ -818,6 +834,18 @@ const Exchanges = () => {
                 </tbody>
               </table>
               <div className="pb-total" style={{ flexDirection: 'column', gap: '4px' }}>
+                {printData.discount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: '#555' }}>
+                    <span>Subtotal:</span>
+                    <span>₹{printData.subtotal.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {printData.discount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: '#555' }}>
+                    <span>Discount:</span>
+                    <span>-₹{printData.discount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
                   <span>Total Amount:</span>
                   <span>₹{printData.total.toLocaleString('en-IN')}</span>
@@ -908,22 +936,22 @@ const Exchanges = () => {
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
             <div className="section-title" style={{ color: 'var(--danger)', fontSize: '20px', borderBottom: 'none', paddingBottom: 0, marginBottom: '12px', display: 'block' }}>Confirm Bill Deletion</div>
             <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px' }}>
-              Are you sure you want to permanently delete Bill #<strong style={{ color: 'var(--dark)' }}>{deleteBillItem.id.slice(0, 8).toUpperCase()}</strong> and all its associated items and returns?<br/><br/>
-              <strong style={{ color: '#DC2626', fontSize: '20px' }}>₹{Number(deleteBillItem.total_amount).toLocaleString('en-IN')}</strong><br/>
+              Are you sure you want to permanently delete Bill #<strong style={{ color: 'var(--dark)' }}>{deleteBillItem.id.slice(0, 8).toUpperCase()}</strong> and all its associated items and returns?<br /><br />
+              <strong style={{ color: '#DC2626', fontSize: '20px' }}>₹{Number(deleteBillItem.total_amount).toLocaleString('en-IN')}</strong><br />
               <span style={{ fontSize: '13px', color: '#6B7280', display: 'block', marginTop: '6px' }}>Customer: {deleteBillItem.customer_name || 'Walk-in'}</span>
             </p>
-            
+
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button 
-                className="btn btn-secondary" 
-                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600' }} 
+              <button
+                className="btn btn-secondary"
+                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600' }}
                 onClick={() => setDeleteBillItem(null)}
               >
                 Cancel
               </button>
-              <button 
-                className="btn btn-danger" 
-                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600', background: 'var(--danger)', color: 'var(--white)', border: 'none' }} 
+              <button
+                className="btn btn-danger"
+                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600', background: 'var(--danger)', color: 'var(--white)', border: 'none' }}
                 onClick={async () => {
                   try {
                     await db.deleteBill(deleteBillItem.id);
@@ -953,22 +981,22 @@ const Exchanges = () => {
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
             <div className="section-title" style={{ color: 'var(--danger)', fontSize: '20px', borderBottom: 'none', paddingBottom: 0, marginBottom: '12px', display: 'block' }}>Confirm Return Deletion</div>
             <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px' }}>
-              Are you sure you want to permanently delete this return record?<br/><br/>
-              <strong style={{ color: 'var(--dark)', fontSize: '16px' }}>Reason: {deleteReturnItem.return_reason}</strong><br/>
+              Are you sure you want to permanently delete this return record?<br /><br />
+              <strong style={{ color: 'var(--dark)', fontSize: '16px' }}>Reason: {deleteReturnItem.return_reason}</strong><br />
               <strong style={{ color: '#DC2626', fontSize: '18px' }}>Settlement: ₹{Math.abs(deleteReturnItem.net_amount || 0)}</strong>
             </p>
-            
+
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button 
-                className="btn btn-secondary" 
-                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600' }} 
+              <button
+                className="btn btn-secondary"
+                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600' }}
                 onClick={() => setDeleteReturnItem(null)}
               >
                 Cancel
               </button>
-              <button 
-                className="btn btn-danger" 
-                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600', background: 'var(--danger)', color: 'var(--white)', border: 'none' }} 
+              <button
+                className="btn btn-danger"
+                style={{ flex: 1, padding: '12px', fontSize: '13px', fontWeight: '600', background: 'var(--danger)', color: 'var(--white)', border: 'none' }}
                 onClick={async () => {
                   try {
                     await db.deleteReturn(deleteReturnItem.id);
