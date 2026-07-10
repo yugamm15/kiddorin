@@ -757,6 +757,137 @@ class SupabaseDB {
     const { error } = await supabase.from('shop_expenses').delete().eq('id', id);
     if (error) throw error;
   }
+
+  async processMultipleExchange(payload) {
+    const { branch_id, original_bill_id, customer_name, customer_phone, returns, exchanges, overall_net_amount } = payload;
+
+    // 1. Generate paired rows using our helper logic
+    const pairedRows = [];
+    let retIdx = 0;
+    let exIdx = 0;
+    const rets = returns.map(r => ({ ...r }));
+    const exchs = exchanges.map(e => ({ ...e }));
+
+    while (retIdx < rets.length || exIdx < exchs.length) {
+      const ret = rets[retIdx];
+      const ex = exchs[exIdx];
+
+      let returned_product_id = null;
+      let returned_qty = 0;
+      let returned_price = 0;
+      let return_reason = null;
+
+      let exchanged_product_id = null;
+      let exchanged_qty = 0;
+      let exchanged_price = 0;
+
+      if (ret && ex) {
+        const qty = Math.min(ret.qty, ex.qty);
+        returned_product_id = ret.product_id;
+        returned_qty = qty;
+        returned_price = ret.price;
+        return_reason = ret.reason;
+
+        exchanged_product_id = ex.product_id;
+        exchanged_qty = qty;
+        exchanged_price = ex.price;
+
+        ret.qty -= qty;
+        ex.qty -= qty;
+
+        if (ret.qty <= 0) retIdx++;
+        if (ex.qty <= 0) exIdx++;
+      } else if (ret) {
+        returned_product_id = ret.product_id;
+        returned_qty = ret.qty;
+        returned_price = ret.price;
+        return_reason = ret.reason;
+
+        retIdx++;
+      } else if (ex) {
+        exchanged_product_id = ex.product_id;
+        exchanged_qty = ex.qty;
+        exchanged_price = ex.price;
+
+        exIdx++;
+      }
+
+      const rowNetAmount = (exchanged_price * exchanged_qty) - (returned_price * returned_qty);
+      pairedRows.push({
+        branch_id,
+        original_bill_id,
+        customer_name,
+        customer_phone,
+        returned_product_id,
+        returned_qty,
+        exchanged_product_id,
+        exchanged_qty,
+        net_amount: rowNetAmount,
+        return_reason: return_reason || 'Return'
+      });
+    }
+
+    // 2. Insert all paired rows and adjust stock for each
+    const insertedRecords = [];
+    for (const row of pairedRows) {
+      const { data: exRecord, error: exErr } = await supabase
+        .from('returns_exchanges')
+        .insert([row])
+        .select()
+        .single();
+      if (exErr) throw exErr;
+      insertedRecords.push(exRecord);
+
+      // Adjust Stock for Returned Item
+      if (row.returned_product_id && row.return_reason !== 'Defective / Damaged') {
+        const { data: retProd } = await supabase.from('products').select('quantity').eq('id', row.returned_product_id).single();
+        if (retProd) {
+          await supabase.from('products').update({ quantity: retProd.quantity + row.returned_qty }).eq('id', row.returned_product_id);
+        }
+      }
+
+      // Adjust Stock for Exchanged Item
+      if (row.exchanged_product_id) {
+        const { data: exProd } = await supabase.from('products').select('quantity').eq('id', row.exchanged_product_id).single();
+        if (exProd) {
+          await supabase.from('products').update({ quantity: exProd.quantity - row.exchanged_qty }).eq('id', row.exchanged_product_id);
+        }
+      }
+    }
+
+    // 3. Record Store Credit once if overall_net_amount < 0
+    if (overall_net_amount < 0 && customer_phone) {
+      const creditAmt = Math.abs(overall_net_amount);
+      const { data: existCredit } = await supabase
+        .from('customer_credits')
+        .select('*')
+        .eq('branch_id', branch_id)
+        .eq('customer_phone', customer_phone)
+        .maybeSingle();
+
+      if (existCredit) {
+        await supabase
+          .from('customer_credits')
+          .update({ balance: Number(existCredit.balance) + creditAmt, updated_at: new Date().toISOString() })
+          .eq('id', existCredit.id);
+      } else {
+        await supabase
+          .from('customer_credits')
+          .insert([{ branch_id, customer_phone, customer_name, balance: creditAmt }]);
+      }
+
+      const { data: br } = await supabase.from('branches').select('customer_credits_balance').eq('id', branch_id).maybeSingle();
+      if (br) {
+        await supabase
+          .from('branches')
+          .update({ customer_credits_balance: Number(br.customer_credits_balance || 0) + creditAmt })
+          .eq('id', branch_id);
+      }
+    }
+
+    this.cache = {}; // invalidate cache
+    return insertedRecords[0] || null;
+  }
 }
 
 export const db = new SupabaseDB();

@@ -11,15 +11,13 @@ const Exchanges = () => {
   const [selectedBill, setSelectedBill] = useState(null);
 
   // Return state
-  const [returnedItem, setReturnedItem] = useState(null);
-  const [returnReason, setReturnReason] = useState('Size Issue');
-  const [customReason, setCustomReason] = useState('');
+  const [selectedReturnItems, setSelectedReturnItems] = useState({}); // { bill_item_id: { qty, reason, customReason } }
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
 
   // Exchange state
   const [exchangeBarcode, setExchangeBarcode] = useState('');
-  const [exchangedItem, setExchangedItem] = useState(null);
+  const [exchangedItems, setExchangedItems] = useState([]); // Array of { product, qty }
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [splitCash, setSplitCash] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -66,17 +64,36 @@ const Exchanges = () => {
     setSelectedBill(bill);
     setCustomerName(bill?.customer_name || '');
     setCustomerPhone(bill?.customer_phone || '');
-    const firstItem = (bill?.bill_items || [])[0];
-    setReturnedItem(firstItem || null);
-    setExchangedItem(null);
+    setSelectedReturnItems({});
+    setExchangedItems([]);
     setExchangeBarcode('');
   };
 
   const handleViewBill = (bill, billRets) => {
     if (billRets && billRets.length > 0) {
       const latestRet = billRets[0];
-      const bItems = bill.bill_items || [];
-      const matchItem = bItems.find(bi => bi.product_id === latestRet.returned_product_id || bi.products?.id === latestRet.returned_product_id) || bItems[0];
+      const latestTime = new Date(latestRet.created_at).getTime();
+      const groupRets = billRets.filter(r => Math.abs(new Date(r.created_at).getTime() - latestTime) < 5000);
+
+      const returnsList = groupRets.map(ret => {
+        const bItem = (bill.bill_items || []).find(bi => bi.product_id === ret.returned_product_id || bi.products?.id === ret.returned_product_id);
+        return {
+          qty: ret.returned_qty,
+          price: Number(bItem?.price_at_sale || 0),
+          reason: ret.return_reason,
+          products: bItem?.products || { category: 'Product', size: '', color: '', design_number: '' }
+        };
+      }).filter(r => r.qty > 0);
+
+      const exchangesList = groupRets.map(ret => {
+        if (!ret.exchanged_product_id) return null;
+        return {
+          qty: ret.exchanged_qty,
+          product: ret.exchanged_product || { category: 'Product', size: '', color: '', design_number: '', selling_price: 0 }
+        };
+      }).filter(Boolean);
+
+      const totalNet = groupRets.reduce((sum, r) => sum + Number(r.net_amount || 0), 0);
 
       setViewingBillPreview({
         type: 'return',
@@ -84,13 +101,9 @@ const Exchanges = () => {
         date: new Date(latestRet.created_at).toLocaleString('en-IN'),
         customerName: latestRet.customer_name || bill.customer_name || 'Walk-in Customer',
         customerPhone: latestRet.customer_phone || bill.customer_phone || '',
-        returnedItem: {
-          products: matchItem?.products || { category: 'Product', size: '' },
-          price_at_sale: matchItem?.price_at_sale || 0
-        },
-        returnReason: latestRet.return_reason || 'Return',
-        exchangedItem: latestRet.exchanged_product || null,
-        netAmount: Number(latestRet.net_amount || 0),
+        returns: returnsList,
+        exchanges: exchangesList,
+        netAmount: totalNet,
         paymentMethod: latestRet.payment_method || 'Store Credit Note'
       });
     } else {
@@ -123,7 +136,22 @@ const Exchanges = () => {
     if (!exchangeBarcode.trim()) return;
     try {
       const prod = await db.getProductByBarcode(exchangeBarcode.trim(), user.branch_id);
-      setExchangedItem(prod);
+      
+      const existingIndex = exchangedItems.findIndex(item => item.product.id === prod.id);
+      if (existingIndex !== -1) {
+        const newExchanged = [...exchangedItems];
+        const currentQty = newExchanged[existingIndex].qty;
+        if (currentQty + 1 > prod.quantity) {
+          throw new Error(`Only ${prod.quantity} pieces in stock for this replacement item.`);
+        }
+        newExchanged[existingIndex].qty += 1;
+        setExchangedItems(newExchanged);
+      } else {
+        if (prod.quantity < 1) {
+          throw new Error("Product Out of Stock!");
+        }
+        setExchangedItems([...exchangedItems, { product: prod, qty: 1 }]);
+      }
       setExchangeBarcode('');
       toast.success('Added replacement item!');
     } catch (err) {
@@ -131,25 +159,64 @@ const Exchanges = () => {
     }
   };
 
-  const calculateNetDifference = () => {
-    const retVal = returnedItem ? (Number(returnedItem.price_at_sale) * returnedItem.quantity) : 0;
-    const exVal = exchangedItem ? Number(exchangedItem.selling_price) : 0;
-    return exVal - retVal;
-  };
-
-  const handleConfirmExchange = async () => {
-    if (!returnedItem) {
-      toast.error('Select an item being returned');
+  const updateExchangeQty = (index, delta) => {
+    const updated = [...exchangedItems];
+    const item = updated[index];
+    const newQty = item.qty + delta;
+    if (newQty < 1) return;
+    if (newQty > item.product.quantity) {
+      toast.error(`Only ${item.product.quantity} pieces in stock!`);
       return;
     }
-    const netDiff = calculateNetDifference();
+    updated[index].qty = newQty;
+    setExchangedItems(updated);
+  };
+
+  const removeExchangeItem = (index) => {
+    setExchangedItems(exchangedItems.filter((_, i) => i !== index));
+  };
+
+  const totalReturnedValue = Object.keys(selectedReturnItems).reduce((sum, itemId) => {
+    const bItem = (selectedBill?.bill_items || []).find(bi => bi.id === itemId);
+    if (!bItem) return sum;
+    const details = selectedReturnItems[itemId];
+    return sum + (Number(bItem.price_at_sale) * details.qty);
+  }, 0);
+
+  const totalExchangedValue = exchangedItems.reduce((sum, item) => {
+    return sum + (Number(item.product.selling_price) * item.qty);
+  }, 0);
+
+  const netDiff = totalExchangedValue - totalReturnedValue;
+
+  const handleConfirmExchange = async () => {
+    const returnKeys = Object.keys(selectedReturnItems);
+    if (returnKeys.length === 0) {
+      toast.error('Select at least one item being returned');
+      return;
+    }
     if (netDiff < 0 && !customerPhone.trim()) {
       toast.error('Please enter Customer Phone Number to save Store Credit balance.');
       return;
     }
     setProcessing(true);
     try {
-      const finalReason = returnReason === 'Other' ? customReason : returnReason;
+      const returnsPayload = returnKeys.map(itemId => {
+        const bItem = selectedBill.bill_items.find(bi => bi.id === itemId);
+        const details = selectedReturnItems[itemId];
+        return {
+          product_id: bItem.product_id,
+          qty: details.qty,
+          price: Number(bItem.price_at_sale || 0),
+          reason: details.reason === 'Other' ? details.customReason : details.reason
+        };
+      });
+
+      const exchangesPayload = exchangedItems.map(item => ({
+        product_id: item.product.id,
+        qty: item.qty,
+        price: Number(item.product.selling_price || 0)
+      }));
 
       const sCashAmt = parseFloat(splitCash) || 0;
       const sUpiAmt = Math.max(0, netDiff - sCashAmt);
@@ -160,16 +227,12 @@ const Exchanges = () => {
         original_bill_id: selectedBill?.id || null,
         customer_name: customerName.trim() || selectedBill?.customer_name || 'Walk-in Customer',
         customer_phone: customerPhone.trim() || selectedBill?.customer_phone || null,
-        returned_product_id: returnedItem.product_id,
-        returned_qty: returnedItem.quantity,
-        return_reason: finalReason,
-        exchanged_product_id: exchangedItem?.id || null,
-        exchanged_qty: exchangedItem ? 1 : 0,
-        net_amount: netDiff,
-        payment_method: netDiff > 0 ? finalPayMethod : 'Store Credit Note'
+        returns: returnsPayload,
+        exchanges: exchangesPayload,
+        overall_net_amount: netDiff
       };
 
-      const result = await db.processExchange(payload);
+      const result = await db.processMultipleExchange(payload);
       toast.success('Exchange processed successfully!');
 
       setCompletedExchange({
@@ -177,17 +240,27 @@ const Exchanges = () => {
         date: new Date().toLocaleString('en-IN'),
         customerName: customerName.trim() || selectedBill?.customer_name || 'Walk-in Customer',
         customerPhone: customerPhone.trim() || selectedBill?.customer_phone || '',
-        returnedItem: returnedItem,
-        returnReason: finalReason,
-        exchangedItem: exchangedItem,
+        returns: returnsPayload.map(r => {
+          const bItem = selectedBill.bill_items.find(bi => bi.product_id === r.product_id);
+          return {
+            ...r,
+            products: bItem?.products || { category: 'Product', size: '', color: '', design_number: '' }
+          };
+        }),
+        exchanges: exchangedItems.map(item => ({
+          product: item.product,
+          qty: item.qty
+        })),
         netAmount: netDiff,
         paymentMethod: netDiff > 0 ? finalPayMethod : 'Store Credit Note'
       });
 
       // reset inputs
       setSelectedBill(null);
-      setReturnedItem(null);
-      setExchangedItem(null);
+      setSelectedReturnItems({});
+      setExchangedItems([]);
+      setExchangeBarcode('');
+      setSplitCash('');
       loadBills();
     } catch (err) {
       toast.error(err.message);
@@ -195,8 +268,6 @@ const Exchanges = () => {
       setProcessing(false);
     }
   };
-
-  const netDiff = calculateNetDifference();
 
   return (
     <div className="page active" id="exchanges-page">
@@ -311,63 +382,138 @@ const Exchanges = () => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
             {/* LEFT COLUMN: RETURNED ITEM */}
             <div className="card" style={{ margin: 0 }}>
-              <div className="section-title">Step 1: Item Being Returned</div>
+              <div className="section-title">Step 1: Items Being Returned</div>
 
               <div style={{ marginBottom: '16px' }}>
-                <label style={{ fontSize: '11px', fontWeight: 600, color: '#666', textTransform: 'uppercase' }}>Select Item from Customer's Bill:</label>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: '#666', textTransform: 'uppercase' }}>Select Item(s) from Customer's Bill:</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
                   {(selectedBill.bill_items || []).map((bItem, i) => {
                     const prod = bItem.products || {};
-                    const isSelected = returnedItem?.id === bItem.id;
+                    const selectedInfo = selectedReturnItems[bItem.id];
+                    const isSelected = !!selectedInfo;
                     return (
                       <div
                         key={bItem.id || i}
-                        onClick={() => setReturnedItem(bItem)}
                         style={{
                           padding: '12px', border: isSelected ? '2px solid #2ecc71' : '1px solid #ddd',
-                          borderRadius: '4px', cursor: 'pointer', background: isSelected ? '#eafaf1' : '#fff',
-                          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                          borderRadius: '4px', background: isSelected ? '#eafaf1' : '#fff',
+                          display: 'flex', flexDirection: 'column', gap: '8px'
                         }}
                       >
-                        <div>
-                          <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{prod.category || 'Product'} ({prod.size || ''} {prod.color || ''})</div>
-                          <div style={{ fontSize: '11px', color: '#666' }}>Design: #{prod.design_number} | Qty: {bItem.quantity}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0, width: '100%' }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                if (isSelected) {
+                                  const updated = { ...selectedReturnItems };
+                                  delete updated[bItem.id];
+                                  setSelectedReturnItems(updated);
+                                } else {
+                                  setSelectedReturnItems({
+                                    ...selectedReturnItems,
+                                    [bItem.id]: { qty: 1, reason: 'Size Issue', customReason: '' }
+                                  });
+                                }
+                              }}
+                              style={{ width: '16px', height: '16px' }}
+                            />
+                            <div>
+                              <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{prod.category || 'Product'} ({prod.size || ''} {prod.color || ''})</div>
+                              <div style={{ fontSize: '11px', color: '#666' }}>Design: #{prod.design_number} | Bill Qty: {bItem.quantity}</div>
+                            </div>
+                          </label>
+                          <div style={{ fontWeight: 700, color: '#e74c3c' }}>₹{bItem.price_at_sale}</div>
                         </div>
-                        <div style={{ fontWeight: 700, color: '#e74c3c' }}>₹{bItem.price_at_sale}</div>
+
+                        {isSelected && (
+                          <div style={{ borderTop: '1px dashed #ccc', paddingTop: '8px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '12px', fontWeight: 600 }}>Qty to Return:</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '2px 8px', minWidth: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  onClick={() => {
+                                    if (selectedInfo.qty > 1) {
+                                      setSelectedReturnItems({
+                                        ...selectedReturnItems,
+                                        [bItem.id]: { ...selectedInfo, qty: selectedInfo.qty - 1 }
+                                      });
+                                    }
+                                  }}
+                                  disabled={selectedInfo.qty <= 1}
+                                >
+                                  -
+                                </button>
+                                <span style={{ fontWeight: 'bold', width: '20px', textAlign: 'center' }}>{selectedInfo.qty}</span>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '2px 8px', minWidth: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  onClick={() => {
+                                    if (selectedInfo.qty < bItem.quantity) {
+                                      setSelectedReturnItems({
+                                        ...selectedReturnItems,
+                                        [bItem.id]: { ...selectedInfo, qty: selectedInfo.qty + 1 }
+                                      });
+                                    } else {
+                                      toast.error(`Cannot return more than purchased quantity (${bItem.quantity})`);
+                                    }
+                                  }}
+                                  disabled={selectedInfo.qty >= bItem.quantity}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                            <div className="form-group" style={{ margin: 0 }}>
+                              <label style={{ fontSize: '11px', margin: 0 }}>Reason for Return</label>
+                              <select
+                                value={selectedInfo.reason}
+                                onChange={e => setSelectedReturnItems({
+                                  ...selectedReturnItems,
+                                  [bItem.id]: { ...selectedInfo, reason: e.target.value }
+                                })}
+                                style={{ padding: '6px', fontSize: '12px', width: '100%' }}
+                              >
+                                <option value="Size Issue">📏 Wrong / Mismatched Size</option>
+                                <option value="Color Exchange">🎨 Color / Style Preference</option>
+                                <option value="Defective / Damaged">💔 Defective / Damaged (Log Loss)</option>
+                                <option value="Other">📝 Other Reason...</option>
+                              </select>
+                            </div>
+                            {selectedInfo.reason === 'Other' && (
+                              <div className="form-group" style={{ margin: 0 }}>
+                                <input
+                                  type="text"
+                                  placeholder="Enter reason..."
+                                  value={selectedInfo.customReason || ''}
+                                  onChange={e => setSelectedReturnItems({
+                                    ...selectedReturnItems,
+                                    [bItem.id]: { ...selectedInfo, customReason: e.target.value }
+                                  })}
+                                  style={{ padding: '6px', fontSize: '12px' }}
+                                />
+                              </div>
+                            )}
+                            {selectedInfo.reason === 'Defective / Damaged' && (
+                              <div className="alert alert-danger" style={{ display: 'block', fontSize: '10px', padding: '6px', margin: 0 }}>
+                                ⚠️ Marked defective: will NOT return to active stock.
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               </div>
-
-              {returnedItem && (
-                <div style={{ borderTop: '1px dashed #ccc', paddingTop: '16px' }}>
-                  <div className="form-group" style={{ marginBottom: '12px' }}>
-                    <label>Reason for Return</label>
-                    <select value={returnReason} onChange={e => setReturnReason(e.target.value)}>
-                      <option value="Size Issue">📏 Wrong / Mismatched Size</option>
-                      <option value="Color Exchange">🎨 Color / Style Preference</option>
-                      <option value="Defective / Damaged">💔 Defective / Damaged (Log Loss)</option>
-                      <option value="Other">📝 Other Reason...</option>
-                    </select>
-                  </div>
-                  {returnReason === 'Other' && (
-                    <div className="form-group">
-                      <input type="text" placeholder="Enter reason..." value={customReason} onChange={e => setCustomReason(e.target.value)} />
-                    </div>
-                  )}
-                  {returnReason === 'Defective / Damaged' && (
-                    <div className="alert alert-danger" style={{ display: 'block', fontSize: '11px', padding: '8px' }}>
-                      ⚠️ Item marked defective will NOT be returned to active inventory.
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
             {/* RIGHT COLUMN: NEW REPLACEMENT ITEM */}
             <div className="card" style={{ margin: 0 }}>
-              <div className="section-title" style={{ fontSize: '14px' }}>Step 2: New Replacement Item <span style={{ fontSize: '11px', fontWeight: 400, color: '#888' }}>(Optional - Leave empty for Store Credit Return)</span></div>
+              <div className="section-title" style={{ fontSize: '14px' }}>Step 2: New Replacement Item(s) <span style={{ fontSize: '11px', fontWeight: 400, color: '#888' }}>(Optional - Leave empty for Store Credit)</span></div>
 
               <div className="form-group" style={{ marginBottom: '16px' }}>
                 <label>Scan Replacement Barcode</label>
@@ -383,19 +529,43 @@ const Exchanges = () => {
                 </div>
               </div>
 
-              {exchangedItem ? (
-                <div style={{ padding: '16px', background: '#f8f9fa', border: '1px solid #ddd', borderRadius: '4px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <span className="badge badge-green" style={{ marginBottom: '4px' }}>Replacement Selected</span>
-                      <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--dark)' }}>{exchangedItem.category} ({exchangedItem.size} {exchangedItem.color})</div>
-                      <div style={{ fontSize: '11px', color: '#666' }}>Design: #{exchangedItem.design_number} | Barcode: {exchangedItem.barcode}</div>
+              {exchangedItems.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+                  {exchangedItems.map((item, index) => (
+                    <div key={item.product.id} style={{ padding: '12px', background: '#f8f9fa', border: '1px solid #ddd', borderRadius: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--dark)' }}>{item.product.category} ({item.product.size} {item.product.color})</div>
+                          <div style={{ fontSize: '11px', color: '#666' }}>Design: #{item.product.design_number} | Stock: {item.product.quantity}</div>
+                        </div>
+                        <button className="btn btn-danger" style={{ padding: '2px 8px', fontSize: '10px' }} onClick={() => removeExchangeItem(index)}>✕ Remove</button>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '2px 8px', minWidth: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            onClick={() => updateExchangeQty(index, -1)}
+                            disabled={item.qty <= 1}
+                          >
+                            -
+                          </button>
+                          <span style={{ fontWeight: 'bold', width: '20px', textAlign: 'center' }}>{item.qty}</span>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '2px 8px', minWidth: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            onClick={() => updateExchangeQty(index, 1)}
+                            disabled={item.qty >= item.product.quantity}
+                          >
+                            +
+                          </button>
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: '16px', color: '#27ae60' }}>
+                          ₹{item.product.selling_price * item.qty}
+                        </div>
+                      </div>
                     </div>
-                    <button className="btn btn-danger" style={{ padding: '2px 8px', fontSize: '10px' }} onClick={() => setExchangedItem(null)}>✕ Remove</button>
-                  </div>
-                  <div style={{ textAlign: 'right', fontWeight: 700, fontSize: '18px', color: '#27ae60', marginTop: '8px' }}>
-                    ₹{exchangedItem.selling_price}
-                  </div>
+                  ))}
                 </div>
               ) : (
                 <div style={{ textAlign: 'center', padding: '24px', border: '2px dashed #eee', borderRadius: '4px', color: '#999', marginBottom: '16px' }}>
@@ -407,11 +577,11 @@ const Exchanges = () => {
               <div style={{ borderTop: '2px solid #333', paddingTop: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
                   <span>Returned Value:</span>
-                  <span>-₹{returnedItem ? (returnedItem.price_at_sale * returnedItem.quantity) : 0}</span>
+                  <span>-₹{totalReturnedValue}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '12px' }}>
                   <span>Replacement Value:</span>
-                  <span>+₹{exchangedItem ? exchangedItem.selling_price : 0}</span>
+                  <span>+₹{totalExchangedValue}</span>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#eee', padding: '12px', borderRadius: '4px', marginBottom: '16px' }}>
@@ -475,7 +645,7 @@ const Exchanges = () => {
                   className="btn btn-primary"
                   style={{ width: '100%', height: '46px', fontSize: '14px', fontWeight: 700 }}
                   onClick={handleConfirmExchange}
-                  disabled={processing || !returnedItem}
+                  disabled={processing || Object.keys(selectedReturnItems).length === 0}
                 >
                   {processing ? 'Processing...' : '✔️ Confirm Return / Exchange'}
                 </button>
@@ -509,27 +679,29 @@ const Exchanges = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td style={{ padding: '6px 0' }}>
-                      <span style={{ color: '#e74c3c', fontWeight: 600 }}>RETURNED:</span> {completedExchange.returnedItem?.products?.category} ({completedExchange.returnedItem?.products?.size})
-                      {completedExchange.returnedItem?.products?.design_number && (
-                        <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{completedExchange.returnedItem.products.design_number}</div>
-                      )}
-                      <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>Reason: {completedExchange.returnReason}</div>
-                    </td>
-                    <td style={{ textAlign: 'right', color: '#e74c3c' }}>-₹{completedExchange.returnedItem?.price_at_sale}</td>
-                  </tr>
-                  {completedExchange.exchangedItem && (
-                    <tr>
+                  {(completedExchange.returns || []).map((ret, rIdx) => (
+                    <tr key={`ret-${rIdx}`}>
                       <td style={{ padding: '6px 0' }}>
-                        <span style={{ color: '#27ae60', fontWeight: 600 }}>ISSUED:</span> {completedExchange.exchangedItem.category} ({completedExchange.exchangedItem.size})
-                        {completedExchange.exchangedItem.design_number && (
-                          <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{completedExchange.exchangedItem.design_number}</div>
+                        <span style={{ color: '#e74c3c', fontWeight: 600 }}>RETURNED:</span> {ret.products?.category} ({ret.products?.size} {ret.products?.color}) x {ret.qty}
+                        {ret.products?.design_number && (
+                          <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{ret.products.design_number}</div>
+                        )}
+                        <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>Reason: {ret.reason}</div>
+                      </td>
+                      <td style={{ textAlign: 'right', color: '#e74c3c' }}>-₹{ret.price * ret.qty}</td>
+                    </tr>
+                  ))}
+                  {(completedExchange.exchanges || []).map((ex, eIdx) => (
+                    <tr key={`ex-${eIdx}`}>
+                      <td style={{ padding: '6px 0' }}>
+                        <span style={{ color: '#27ae60', fontWeight: 600 }}>ISSUED:</span> {ex.product.category} ({ex.product.size} {ex.product.color}) x {ex.qty}
+                        {ex.product.design_number && (
+                          <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{ex.product.design_number}</div>
                         )}
                       </td>
-                      <td style={{ textAlign: 'right', color: '#27ae60' }}>+₹{completedExchange.exchangedItem.selling_price}</td>
+                      <td style={{ textAlign: 'right', color: '#27ae60' }}>+₹{ex.product.selling_price * ex.qty}</td>
                     </tr>
-                  )}
+                  ))}
                 </tbody>
               </table>
 
@@ -722,29 +894,31 @@ const Exchanges = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                        <div style={{ fontWeight: 700 }}>RETURNED</div>
-                        <div>{viewingBillPreview.returnedItem?.products?.category} ({viewingBillPreview.returnedItem?.products?.size})</div>
-                        {viewingBillPreview.returnedItem?.products?.design_number && (
-                          <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{viewingBillPreview.returnedItem.products.design_number}</div>
-                        )}
-                        <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>Reason: {viewingBillPreview.returnReason}</div>
-                      </td>
-                      <td style={{ textAlign: 'right', color: '#e74c3c' }}>-₹{viewingBillPreview.returnedItem?.price_at_sale}</td>
-                    </tr>
-                    {viewingBillPreview.exchangedItem && (
-                      <tr>
-                        <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                          <div style={{ fontWeight: 700 }}>ISSUED</div>
-                          <div>{viewingBillPreview.exchangedItem.category} ({viewingBillPreview.exchangedItem.size})</div>
-                          {viewingBillPreview.exchangedItem.design_number && (
-                            <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{viewingBillPreview.exchangedItem.design_number}</div>
+                    {(viewingBillPreview.returns || []).map((ret, rIdx) => (
+                      <tr key={`ret-${rIdx}`}>
+                        <td style={{ whiteSpace: 'normal', wordBreak: 'break-word', padding: '6px 0' }}>
+                          <div style={{ fontWeight: 700, color: '#e74c3c' }}>RETURNED</div>
+                          <div>{ret.products?.category} ({ret.products?.size} {ret.products?.color}) x {ret.qty}</div>
+                          {ret.products?.design_number && (
+                            <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{ret.products.design_number}</div>
+                          )}
+                          <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>Reason: {ret.reason}</div>
+                        </td>
+                        <td style={{ textAlign: 'right', color: '#e74c3c' }}>-₹{ret.price * ret.qty}</td>
+                      </tr>
+                    ))}
+                    {(viewingBillPreview.exchanges || []).map((ex, eIdx) => (
+                      <tr key={`ex-${eIdx}`}>
+                        <td style={{ whiteSpace: 'normal', wordBreak: 'break-word', padding: '6px 0' }}>
+                          <div style={{ fontWeight: 700, color: '#27ae60' }}>ISSUED</div>
+                          <div>{ex.product.category} ({ex.product.size} {ex.product.color}) x {ex.qty}</div>
+                          {ex.product.design_number && (
+                            <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Design: #{ex.product.design_number}</div>
                           )}
                         </td>
-                        <td style={{ textAlign: 'right', color: '#27ae60' }}>+₹{viewingBillPreview.exchangedItem.selling_price}</td>
+                        <td style={{ textAlign: 'right', color: '#27ae60' }}>+₹{ex.product.selling_price * ex.qty}</td>
                       </tr>
-                    )}
+                    ))}
                   </tbody>
                 </table>
 
@@ -886,29 +1060,31 @@ const Exchanges = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                      <div style={{ fontWeight: 700 }}>RETURNED</div>
-                      <div>{printData.returnedItem?.products?.category} ({printData.returnedItem?.products?.size})</div>
-                      {printData.returnedItem?.products?.design_number && (
-                        <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>Design: #{printData.returnedItem.products.design_number}</div>
-                      )}
-                      <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>Reason: {printData.returnReason}</div>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>-₹{printData.returnedItem?.price_at_sale}</td>
-                  </tr>
-                  {printData.exchangedItem && (
-                    <tr>
+                  {(printData.returns || []).map((ret, rIdx) => (
+                    <tr key={`ret-${rIdx}`}>
+                      <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                        <div style={{ fontWeight: 700 }}>RETURNED</div>
+                        <div>{ret.products?.category} ({ret.products?.size} {ret.products?.color}) x {ret.qty}</div>
+                        {ret.products?.design_number && (
+                          <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>Design: #{ret.products.design_number}</div>
+                        )}
+                        <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>Reason: {ret.reason}</div>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>-₹{ret.price * ret.qty}</td>
+                    </tr>
+                  ))}
+                  {(printData.exchanges || []).map((ex, eIdx) => (
+                    <tr key={`ex-${eIdx}`}>
                       <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
                         <div style={{ fontWeight: 700 }}>ISSUED</div>
-                        <div>{printData.exchangedItem.category} ({printData.exchangedItem.size})</div>
-                        {printData.exchangedItem.design_number && (
-                          <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>Design: #{printData.exchangedItem.design_number}</div>
+                        <div>{ex.product.category} ({ex.product.size} {ex.product.color}) x {ex.qty}</div>
+                        {ex.product.design_number && (
+                          <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>Design: #{ex.product.design_number}</div>
                         )}
                       </td>
-                      <td style={{ textAlign: 'right' }}>+₹{printData.exchangedItem.selling_price}</td>
+                      <td style={{ textAlign: 'right' }}>+₹{ex.product.selling_price * ex.qty}</td>
                     </tr>
-                  )}
+                  ))}
                 </tbody>
               </table>
               <div className="pb-total">
