@@ -12,6 +12,8 @@ const Inventory = () => {
   const [searchSize, setSearchSize] = useState('');
 
   const [dealers, setDealers] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [sizes, setSizes] = useState([]);
   const [restockProduct, setRestockProduct] = useState(null);
   const [restockQty, setRestockQty] = useState('');
   const [restockPrice, setRestockPrice] = useState('');
@@ -20,8 +22,22 @@ const Inventory = () => {
   const [deleteProductItem, setDeleteProductItem] = useState(null);
   const [deleteQty, setDeleteQty] = useState('');
 
+  const [editProduct, setEditProduct] = useState(null);
+  const [editForm, setEditForm] = useState({
+    category: '',
+    gender: '',
+    design_number: '',
+    color: '',
+    size: '',
+    quantity: '',
+    purchase_price: '',
+    selling_price: ''
+  });
+
   useEffect(() => {
     db.getDealers().then(setDealers);
+    db.getCategories().then(data => setCategories(data.map(c => c.name)));
+    db.getSizes().then(data => setSizes(data.map(s => s.name)));
   }, []);
 
   useEffect(() => {
@@ -127,6 +143,56 @@ const Inventory = () => {
     }
   };
 
+  const openEditModal = (product) => {
+    setEditProduct(product);
+    setEditForm({
+      category: product.category,
+      gender: product.gender,
+      design_number: product.design_number,
+      color: product.color,
+      size: product.size,
+      quantity: product.quantity,
+      purchase_price: product.purchase_price,
+      selling_price: product.selling_price
+    });
+  };
+
+  const handleUpdateProduct = async () => {
+    if (!editForm.category || !editForm.gender || !editForm.design_number || !editForm.color || !editForm.size || editForm.quantity === '' || editForm.purchase_price === '' || editForm.selling_price === '') {
+      toast.error('Please fill in all fields');
+      return;
+    }
+    if (parseInt(editForm.quantity) < 0) {
+      toast.error('Quantity cannot be negative');
+      return;
+    }
+    if (parseFloat(editForm.purchase_price) < 0 || parseFloat(editForm.selling_price) < 0) {
+      toast.error('Prices cannot be negative');
+      return;
+    }
+
+    const toastId = toast.loading('Updating product... Please wait ⏳');
+    try {
+      await db.updateProduct(editProduct.id, {
+        category: editForm.category,
+        gender: editForm.gender,
+        design_number: editForm.design_number,
+        color: editForm.color,
+        size: editForm.size,
+        quantity: parseInt(editForm.quantity),
+        purchase_price: parseFloat(editForm.purchase_price),
+        selling_price: parseFloat(editForm.selling_price)
+      });
+      toast.success('Product updated successfully!', { id: toastId });
+      setEditProduct(null);
+      // Refresh products list
+      const data = await db.getProducts(user.branch_id);
+      setProducts(data || []);
+    } catch (err) {
+      toast.error('Failed to update product: ' + err.message, { id: toastId });
+    }
+  };
+
   const filtered = products.filter(s => {
     const matchName = (s.design_number + " " + s.category).toLowerCase().includes(searchName.toLowerCase());
     const matchColor = s.color.toLowerCase().includes(searchColor.toLowerCase());
@@ -225,6 +291,9 @@ const Inventory = () => {
                     </span>
                   </td>
                   <td style={{ display: 'flex', gap: '6px' }}>
+                    <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '10px' }} onClick={() => openEditModal(s)}>
+                      ✏️ EDIT
+                    </button>
                     <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '10px' }} onClick={() => openRestock(s)}>
                       ➕ RESTOCK
                     </button>
@@ -324,6 +393,117 @@ const Inventory = () => {
               >
                 ⚠ Delete Entire Product Permanently
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Edit Product Modal */}
+      {editProduct && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div className="card" style={{ width: '550px', margin: 0, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="section-title">Edit Product Details</div>
+            <p style={{ marginBottom: '16px', color: 'var(--text-muted)' }}>
+              Barcode: <strong style={{ color: 'var(--dark)' }}>{editProduct.barcode}</strong>
+            </p>
+            
+            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+              <div className="form-group">
+                <label>Design Number</label>
+                <input 
+                  type="text" 
+                  value={editForm.design_number} 
+                  disabled
+                  style={{ opacity: 0.7, cursor: 'not-allowed' }}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Category</label>
+                <select 
+                  value={editForm.category} 
+                  disabled
+                  style={{ opacity: 0.7, cursor: 'not-allowed' }}
+                >
+                  <option value="">Select category</option>
+                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Gender</label>
+                <select 
+                  value={editForm.gender} 
+                  disabled
+                  style={{ opacity: 0.7, cursor: 'not-allowed' }}
+                >
+                  <option value="">Select gender</option>
+                  <option value="Boy">Boy</option>
+                  <option value="Girl">Girl</option>
+                  <option value="Unisex">Unisex</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Color</label>
+                <input 
+                  type="text" 
+                  value={editForm.color} 
+                  disabled
+                  style={{ opacity: 0.7, cursor: 'not-allowed' }}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Size</label>
+                <select 
+                  value={editForm.size} 
+                  onChange={e => setEditForm({ ...editForm, size: e.target.value })}
+                >
+                  <option value="">Select size</option>
+                  {sizes.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Current Stock (Qty)</label>
+                <input 
+                  type="number" 
+                  min="0" 
+                  value={editForm.quantity} 
+                  onChange={e => setEditForm({ ...editForm, quantity: e.target.value })} 
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Purchase Price (₹)</label>
+                <input 
+                  type="number" 
+                  min="0" 
+                  step="0.01" 
+                  value={editForm.purchase_price} 
+                  onChange={e => setEditForm({ ...editForm, purchase_price: e.target.value })} 
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Selling Price (₹)</label>
+                <input 
+                  type="number" 
+                  min="0" 
+                  step="0.01" 
+                  value={editForm.selling_price} 
+                  onChange={e => setEditForm({ ...editForm, selling_price: e.target.value })} 
+                />
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleUpdateProduct}>Save Changes</button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setEditProduct(null)}>Cancel</button>
             </div>
           </div>
         </div>

@@ -248,6 +248,28 @@ class SupabaseDB {
     return true;
   }
 
+  async updateProduct(product_id, productData) {
+    if (!product_id) return false;
+    const { data, error } = await supabase
+      .from('products')
+      .update({
+        category: productData.category,
+        gender: productData.gender,
+        color: productData.color,
+        size: productData.size,
+        design_number: productData.design_number,
+        purchase_price: parseFloat(productData.purchase_price),
+        selling_price: parseFloat(productData.selling_price),
+        quantity: parseInt(productData.quantity)
+      })
+      .eq('id', product_id)
+      .select()
+      .single();
+    if (error) throw error;
+    this.cache = {}; // invalidate cache
+    return data;
+  }
+
   async reduceStock(product_id, qtyToRemove) {
     if (!product_id || qtyToRemove <= 0) return false;
     const { data: existing, error: fetchErr } = await supabase
