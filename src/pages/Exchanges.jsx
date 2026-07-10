@@ -104,7 +104,8 @@ const Exchanges = () => {
         returns: returnsList,
         exchanges: exchangesList,
         netAmount: totalNet,
-        paymentMethod: latestRet.payment_method || 'Store Credit Note'
+        paymentMethod: latestRet.payment_method || 'Store Credit Note',
+        originalBill: bill
       });
     } else {
       const subtotal = (bill.bill_items || []).reduce((sum, bi) => sum + Number(bi.price_at_sale || 0) * bi.quantity, 0);
@@ -252,7 +253,8 @@ const Exchanges = () => {
           qty: item.qty
         })),
         netAmount: netDiff,
-        paymentMethod: netDiff > 0 ? finalPayMethod : 'Store Credit Note'
+        paymentMethod: netDiff > 0 ? finalPayMethod : 'Store Credit Note',
+        originalBill: selectedBill
       });
 
       // reset inputs
@@ -705,6 +707,56 @@ const Exchanges = () => {
                 </tbody>
               </table>
 
+              {completedExchange.originalBill && (
+                <div className="no-print" style={{ background: '#fcfcfc', border: '1px solid #ddd', padding: '8px', borderRadius: '4px', marginBottom: '12px', fontSize: '10px' }}>
+                  <div style={{ fontWeight: 'bold', textTransform: 'uppercase', color: '#666', borderBottom: '1px solid #eee', paddingBottom: '4px', marginBottom: '6px' }}>
+                    📄 Original Bill Details (Before Return)
+                  </div>
+                  <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px dashed #ccc', color: '#666' }}>
+                        <th style={{ textAlign: 'left', padding: '2px 0' }}>Item</th>
+                        <th style={{ textAlign: 'center', padding: '2px 0' }}>Qty</th>
+                        <th style={{ textAlign: 'right', padding: '2px 0' }}>Price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(completedExchange.originalBill.bill_items || []).map((bi, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                          <td style={{ padding: '3px 0' }}>
+                            {bi.products?.category} ({bi.products?.size} {bi.products?.color})
+                            {bi.products?.design_number && <div style={{ fontSize: '8px', color: '#777' }}>#{bi.products.design_number}</div>}
+                          </td>
+                          <td style={{ textAlign: 'center', padding: '3px 0' }}>{bi.quantity}</td>
+                          <td style={{ textAlign: 'right', padding: '3px 0' }}>₹{bi.price_at_sale}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ borderTop: '1px dashed #ccc', marginTop: '6px', paddingTop: '6px', fontSize: '10px', color: '#555', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Subtotal:</span>
+                      <span>₹{(() => {
+                        const sub = (completedExchange.originalBill.bill_items || []).reduce((s, bi) => s + Number(bi.price_at_sale) * bi.quantity, 0);
+                        return sub.toLocaleString('en-IN');
+                      })()}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Discount Given:</span>
+                      <span>-₹{(() => {
+                        const sub = (completedExchange.originalBill.bill_items || []).reduce((s, bi) => s + Number(bi.price_at_sale) * bi.quantity, 0);
+                        const disc = Math.max(0, sub - Number(completedExchange.originalBill.total_amount || 0));
+                        return disc.toLocaleString('en-IN');
+                      })()}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#000', marginTop: '2px' }}>
+                      <span>Paid Total:</span>
+                      <span>₹{Number(completedExchange.originalBill.total_amount).toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div style={{ borderTop: '1px solid #000', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginBottom: '16px' }}>
                 <span>Net Settled:</span>
                 <span>{completedExchange.netAmount > 0 ? `Paid ₹${completedExchange.netAmount} (${completedExchange.paymentMethod})` : `Credit ₹${Math.abs(completedExchange.netAmount)}`}</span>
@@ -734,6 +786,59 @@ const Exchanges = () => {
                 <div style={{ fontSize: '12px', color: '#666' }}>Customer: {viewingReturnHistory.bill.customer_name || 'Walk-in'}</div>
               </div>
               <button className="btn btn-secondary" style={{ padding: '4px 10px' }} onClick={() => setViewingReturnHistory(null)}>✕</button>
+            </div>
+
+            {/* Original Bill Info in Return History */}
+            <div style={{ background: '#fcfcfc', border: '1px solid #ddd', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', color: '#666', borderBottom: '1px solid #eee', paddingBottom: '6px', marginBottom: '8px' }}>
+                📄 Original Bill Details (Before Return)
+              </div>
+              <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px dashed #ccc', color: '#666' }}>
+                    <th style={{ textAlign: 'left', padding: '2px 0' }}>Item</th>
+                    <th style={{ textAlign: 'center', padding: '2px 0' }}>Qty</th>
+                    <th style={{ textAlign: 'right', padding: '2px 0' }}>Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(viewingReturnHistory.bill.bill_items || []).map((bi, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                      <td style={{ padding: '6px 0' }}>
+                        {bi.products?.category} ({bi.products?.size} {bi.products?.color})
+                        {bi.products?.design_number && <div style={{ fontSize: '10px', color: '#777' }}>#{bi.products.design_number}</div>}
+                      </td>
+                      <td style={{ textAlign: 'center', padding: '6px 0' }}>{bi.quantity}</td>
+                      <td style={{ textAlign: 'right', padding: '6px 0' }}>₹{bi.price_at_sale}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ borderTop: '1px dashed #ccc', marginTop: '8px', paddingTop: '8px', fontSize: '12px', color: '#555', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Subtotal:</span>
+                  <span>₹{(() => {
+                    const sub = (viewingReturnHistory.bill.bill_items || []).reduce((s, bi) => s + Number(bi.price_at_sale) * bi.quantity, 0);
+                    return sub.toLocaleString('en-IN');
+                  })()}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Discount Given:</span>
+                  <span>-₹{(() => {
+                    const sub = (viewingReturnHistory.bill.bill_items || []).reduce((s, bi) => s + Number(bi.price_at_sale) * bi.quantity, 0);
+                    const disc = Math.max(0, sub - Number(viewingReturnHistory.bill.total_amount || 0));
+                    return disc.toLocaleString('en-IN');
+                  })()}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#000', marginTop: '4px' }}>
+                  <span>Paid Total:</span>
+                  <span>₹{Number(viewingReturnHistory.bill.total_amount).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', color: '#666', marginBottom: '8px' }}>
+              🔄 Return & Exchange Transaction History:
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -921,6 +1026,56 @@ const Exchanges = () => {
                     ))}
                   </tbody>
                 </table>
+
+                {viewingBillPreview.originalBill && (
+                  <div className="no-print" style={{ background: '#fcfcfc', border: '1px solid #ddd', padding: '8px', borderRadius: '4px', marginBottom: '12px', fontSize: '10px' }}>
+                    <div style={{ fontWeight: 'bold', textTransform: 'uppercase', color: '#666', borderBottom: '1px solid #eee', paddingBottom: '4px', marginBottom: '6px' }}>
+                      📄 Original Bill Details (Before Return)
+                    </div>
+                    <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px dashed #ccc', color: '#666' }}>
+                          <th style={{ textAlign: 'left', padding: '2px 0' }}>Item</th>
+                          <th style={{ textAlign: 'center', padding: '2px 0' }}>Qty</th>
+                          <th style={{ textAlign: 'right', padding: '2px 0' }}>Price</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(viewingBillPreview.originalBill.bill_items || []).map((bi, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                            <td style={{ padding: '3px 0' }}>
+                              {bi.products?.category} ({bi.products?.size} {bi.products?.color})
+                              {bi.products?.design_number && <div style={{ fontSize: '8px', color: '#777' }}>#{bi.products.design_number}</div>}
+                            </td>
+                            <td style={{ textAlign: 'center', padding: '3px 0' }}>{bi.quantity}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 0' }}>₹{bi.price_at_sale}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div style={{ borderTop: '1px dashed #ccc', marginTop: '6px', paddingTop: '6px', fontSize: '10px', color: '#555', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Subtotal:</span>
+                        <span>₹{(() => {
+                          const sub = (viewingBillPreview.originalBill.bill_items || []).reduce((s, bi) => s + Number(bi.price_at_sale) * bi.quantity, 0);
+                          return sub.toLocaleString('en-IN');
+                        })()}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Discount Given:</span>
+                        <span>-₹{(() => {
+                          const sub = (viewingBillPreview.originalBill.bill_items || []).reduce((s, bi) => s + Number(bi.price_at_sale) * bi.quantity, 0);
+                          const disc = Math.max(0, sub - Number(viewingBillPreview.originalBill.total_amount || 0));
+                          return disc.toLocaleString('en-IN');
+                        })()}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#000', marginTop: '2px' }}>
+                        <span>Paid Total:</span>
+                        <span>₹{Number(viewingBillPreview.originalBill.total_amount).toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ borderTop: '1px solid #000', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginBottom: '16px' }}>
                   <span>Net Settled:</span>
