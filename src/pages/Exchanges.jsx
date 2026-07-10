@@ -22,6 +22,10 @@ const Exchanges = () => {
   const [splitCash, setSplitCash] = useState('');
   const [processing, setProcessing] = useState(false);
 
+  // Discount state
+  const [discountValue, setDiscountValue] = useState('');
+  const [discountType, setDiscountType] = useState('amount');
+
   // Receipt modal
   const [completedExchange, setCompletedExchange] = useState(null);
   const [branchReturns, setBranchReturns] = useState([]);
@@ -67,6 +71,8 @@ const Exchanges = () => {
     setSelectedReturnItems({});
     setExchangedItems([]);
     setExchangeBarcode('');
+    setDiscountValue('');
+    setDiscountType('amount');
   };
 
   const handleViewBill = (bill, billRets) => {
@@ -94,6 +100,7 @@ const Exchanges = () => {
       }).filter(Boolean);
 
       const totalNet = groupRets.reduce((sum, r) => sum + Number(r.net_amount || 0), 0);
+      const totalDiscount = groupRets.reduce((sum, r) => sum + Number(r.discount || 0), 0);
 
       setViewingBillPreview({
         type: 'return',
@@ -104,6 +111,7 @@ const Exchanges = () => {
         returns: returnsList,
         exchanges: exchangesList,
         netAmount: totalNet,
+        discount: totalDiscount,
         paymentMethod: latestRet.payment_method || 'Store Credit Note',
         originalBill: bill
       });
@@ -188,7 +196,20 @@ const Exchanges = () => {
     return sum + (Number(item.product.selling_price) * item.qty);
   }, 0);
 
-  const netDiff = totalExchangedValue - totalReturnedValue;
+  let discountAmount = 0;
+  let discountPercent = 0;
+  if (discountValue && !isNaN(discountValue) && parseFloat(discountValue) > 0 && totalExchangedValue > 0) {
+    const val = parseFloat(discountValue);
+    if (discountType === 'percent') {
+      discountPercent = Math.min(val, 100);
+      discountAmount = Math.round((totalExchangedValue * discountPercent) / 100);
+    } else {
+      discountAmount = Math.min(val, totalExchangedValue);
+      discountPercent = parseFloat(((discountAmount / totalExchangedValue) * 100).toFixed(2));
+    }
+  }
+
+  const netDiff = totalExchangedValue - totalReturnedValue - discountAmount;
 
   const handleConfirmExchange = async () => {
     const returnKeys = Object.keys(selectedReturnItems);
@@ -230,7 +251,8 @@ const Exchanges = () => {
         customer_phone: customerPhone.trim() || selectedBill?.customer_phone || null,
         returns: returnsPayload,
         exchanges: exchangesPayload,
-        overall_net_amount: netDiff
+        overall_net_amount: netDiff,
+        discount: discountAmount
       };
 
       const result = await db.processMultipleExchange(payload);
@@ -253,6 +275,7 @@ const Exchanges = () => {
           qty: item.qty
         })),
         netAmount: netDiff,
+        discount: discountAmount,
         paymentMethod: netDiff > 0 ? finalPayMethod : 'Store Credit Note',
         originalBill: selectedBill
       });
@@ -263,6 +286,8 @@ const Exchanges = () => {
       setExchangedItems([]);
       setExchangeBarcode('');
       setSplitCash('');
+      setDiscountValue('');
+      setDiscountType('amount');
       loadBills();
     } catch (err) {
       toast.error(err.message);
@@ -586,6 +611,46 @@ const Exchanges = () => {
                   <span>+₹{totalExchangedValue}</span>
                 </div>
 
+                {exchangedItems.length > 0 && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)', marginBottom: '12px' }}>
+                      <span className="label" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>DISCOUNT (OPTIONAL)</span>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <input 
+                            type="number" 
+                            value={discountType === 'percent' ? discountValue : (discountPercent ? discountPercent : '')} 
+                            onChange={e => { setDiscountType('percent'); setDiscountValue(e.target.value); }} 
+                            style={{ padding: '10px 26px 10px 10px', width: '92px', borderRadius: '4px', border: '1px solid var(--border)', textAlign: 'right', fontWeight: 'bold', fontSize: '14px', background: discountType === 'percent' && discountValue ? '#fff' : 'var(--off-white)' }}
+                            placeholder="0"
+                            min="0"
+                            max="100"
+                          />
+                          <span style={{ position: 'absolute', right: '10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '13px' }}>%</span>
+                        </div>
+                        <span style={{ color: '#bbb', fontWeight: 'bold' }}>OR</span>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <span style={{ position: 'absolute', left: '10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '13px' }}>₹</span>
+                          <input 
+                            type="number" 
+                            value={discountType === 'amount' ? discountValue : (discountAmount ? discountAmount : '')} 
+                            onChange={e => { setDiscountType('amount'); setDiscountValue(e.target.value); }} 
+                            style={{ padding: '10px 10px 10px 22px', width: '110px', borderRadius: '4px', border: '1px solid var(--border)', textAlign: 'right', fontWeight: 'bold', fontSize: '14px', background: discountType === 'amount' && discountValue ? '#fff' : 'var(--off-white)' }}
+                            placeholder="0"
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {discountAmount > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0 12px', color: 'var(--success)', fontWeight: 600, fontSize: '13px' }}>
+                        <span>DISCOUNT APPLIED</span>
+                        <span>-₹{discountAmount.toLocaleString('en-IN')} ({discountPercent}%)</span>
+                      </div>
+                    )}
+                  </>
+                )}
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#eee', padding: '12px', borderRadius: '4px', marginBottom: '16px' }}>
                   <span style={{ fontWeight: 700, fontSize: '14px' }}>Net Difference Balance:</span>
                   <span style={{ fontWeight: 800, fontSize: '18px', color: netDiff > 0 ? '#e74c3c' : (netDiff < 0 ? '#2980b9' : '#27ae60') }}>
@@ -757,6 +822,12 @@ const Exchanges = () => {
                 </div>
               )}
 
+              {completedExchange.discount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: 'var(--success)', fontWeight: 600 }}>
+                  <span>Discount:</span>
+                  <span>-₹{completedExchange.discount.toLocaleString('en-IN')}</span>
+                </div>
+              )}
               <div style={{ borderTop: '1px solid #000', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginBottom: '16px' }}>
                 <span>Net Settled:</span>
                 <span>{completedExchange.netAmount > 0 ? `Paid ₹${completedExchange.netAmount} (${completedExchange.paymentMethod})` : `Credit ₹${Math.abs(completedExchange.netAmount)}`}</span>
@@ -871,6 +942,12 @@ const Exchanges = () => {
                     {ret.exchanged_product_id && (
                       <div style={{ fontSize: '13px', fontWeight: 600, color: '#27ae60', marginTop: '4px' }}>
                         🎁 Replacement Issued: {ret.exchanged_product ? `${ret.exchanged_product.category} (${ret.exchanged_product.size} ${ret.exchanged_product.color})${ret.exchanged_product.design_number ? ` | Design: #${ret.exchanged_product.design_number}` : ''}` : `ID #${ret.exchanged_product_id.slice(0, 8)}`}
+                      </div>
+                    )}
+                    {ret.discount > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--success)', fontWeight: 600, marginTop: '4px' }}>
+                        <span>Discount Given:</span>
+                        <span>-₹{ret.discount}</span>
                       </div>
                     )}
                     <div style={{ borderTop: '1px dashed #ccc', marginTop: '10px', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '13px' }}>
@@ -1077,6 +1154,12 @@ const Exchanges = () => {
                   </div>
                 )}
 
+                {viewingBillPreview.discount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: 'var(--success)', fontWeight: 600 }}>
+                    <span>Discount:</span>
+                    <span>-₹{viewingBillPreview.discount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
                 <div style={{ borderTop: '1px solid #000', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginBottom: '16px' }}>
                   <span>Net Settled:</span>
                   <span>{viewingBillPreview.netAmount > 0 ? `Paid ₹${viewingBillPreview.netAmount} (${viewingBillPreview.paymentMethod})` : `Credit ₹${Math.abs(viewingBillPreview.netAmount)}`}</span>
@@ -1242,6 +1325,12 @@ const Exchanges = () => {
                   ))}
                 </tbody>
               </table>
+              {printData.discount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', paddingBottom: '4px', borderBottom: '1px dashed #eee', marginBottom: '4px' }}>
+                  <span>Discount:</span>
+                  <span>-₹{printData.discount.toLocaleString('en-IN')}</span>
+                </div>
+              )}
               <div className="pb-total">
                 <span>Net Settled:</span>
                 <span>{printData.netAmount > 0 ? `Paid ₹${printData.netAmount} (${printData.paymentMethod})` : `Credit ₹${Math.abs(printData.netAmount)}`}</span>

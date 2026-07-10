@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS returns_exchanges (
     exchanged_product_id UUID REFERENCES products(id) ON DELETE SET NULL,
     exchanged_qty INTEGER DEFAULT 0,
     net_amount DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    discount DECIMAL(10, 2) DEFAULT 0.00,
     return_reason VARCHAR(255),
     customer_name VARCHAR(255),
     customer_phone VARCHAR(50),

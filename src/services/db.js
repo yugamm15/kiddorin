@@ -759,7 +759,7 @@ class SupabaseDB {
   }
 
   async processMultipleExchange(payload) {
-    const { branch_id, original_bill_id, customer_name, customer_phone, returns, exchanges, overall_net_amount } = payload;
+    const { branch_id, original_bill_id, customer_name, customer_phone, returns, exchanges, overall_net_amount, discount } = payload;
 
     // 1. Generate paired rows using our helper logic
     const pairedRows = [];
@@ -823,18 +823,33 @@ class SupabaseDB {
         exchanged_product_id,
         exchanged_qty,
         net_amount: rowNetAmount,
-        return_reason: return_reason || 'Return'
+        return_reason: return_reason || 'Return',
+        discount: pairedRows.length === 0 ? (discount || 0) : 0
       });
     }
 
     // 2. Insert all paired rows and adjust stock for each
     const insertedRecords = [];
     for (const row of pairedRows) {
-      const { data: exRecord, error: exErr } = await supabase
+      let insertPayload = { ...row };
+      let { data: exRecord, error: exErr } = await supabase
         .from('returns_exchanges')
-        .insert([row])
+        .insert([insertPayload])
         .select()
         .single();
+
+      if (exErr && exErr.message && exErr.message.includes('discount')) {
+        console.warn("Column 'discount' does not exist in 'returns_exchanges' table. Retrying insert without it.");
+        delete insertPayload.discount;
+        const res = await supabase
+          .from('returns_exchanges')
+          .insert([insertPayload])
+          .select()
+          .single();
+        exRecord = res.data;
+        exErr = res.error;
+      }
+
       if (exErr) throw exErr;
       insertedRecords.push(exRecord);
 
