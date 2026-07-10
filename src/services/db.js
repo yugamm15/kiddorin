@@ -124,14 +124,14 @@ class SupabaseDB {
         newBarcode = data;
       } catch (rpcErr) {
         console.warn("RPC 'get_next_barcode' not found or failed, falling back to client-side logic:", rpcErr.message);
-        
+
         // 2. Fallback: Fetch the latest 200 products by creation time to find the newest barcode.
         const { data: skuRows } = await supabase
           .from('products')
           .select('barcode')
           .order('created_at', { ascending: false })
           .limit(200);
-        
+
         let nextNum = 10001;
         if (skuRows && skuRows.length > 0) {
           skuRows.forEach(row => {
@@ -200,7 +200,7 @@ class SupabaseDB {
   async getProducts(branch_id, filters = {}) {
     const hasFilters = filters.searchName || filters.searchColor || filters.searchSize;
     const cacheKey = `products_${branch_id}`;
-    
+
     if (!hasFilters && this.cache[cacheKey] && (Date.now() - this.cache[cacheKey].ts < 10000)) {
       return this.cache[cacheKey].data;
     }

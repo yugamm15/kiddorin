@@ -110,7 +110,7 @@ const Exchanges = () => {
         customerPhone: latestRet.customer_phone || bill.customer_phone || '',
         returns: returnsList,
         exchanges: exchangesList,
-        netAmount: totalNet,
+        netAmount: totalNet - totalDiscount,
         discount: totalDiscount,
         paymentMethod: latestRet.payment_method || 'Store Credit Note',
         originalBill: bill
@@ -145,7 +145,7 @@ const Exchanges = () => {
     if (!exchangeBarcode.trim()) return;
     try {
       const prod = await db.getProductByBarcode(exchangeBarcode.trim(), user.branch_id);
-      
+
       const existingIndex = exchangedItems.findIndex(item => item.product.id === prod.id);
       if (existingIndex !== -1) {
         const newExchanged = [...exchangedItems];
@@ -617,10 +617,10 @@ const Exchanges = () => {
                       <span className="label" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>DISCOUNT (OPTIONAL)</span>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                          <input 
-                            type="number" 
-                            value={discountType === 'percent' ? discountValue : (discountPercent ? discountPercent : '')} 
-                            onChange={e => { setDiscountType('percent'); setDiscountValue(e.target.value); }} 
+                          <input
+                            type="number"
+                            value={discountType === 'percent' ? discountValue : (discountPercent ? discountPercent : '')}
+                            onChange={e => { setDiscountType('percent'); setDiscountValue(e.target.value); }}
                             style={{ padding: '10px 26px 10px 10px', width: '92px', borderRadius: '4px', border: '1px solid var(--border)', textAlign: 'right', fontWeight: 'bold', fontSize: '14px', background: discountType === 'percent' && discountValue ? '#fff' : 'var(--off-white)' }}
                             placeholder="0"
                             min="0"
@@ -631,10 +631,10 @@ const Exchanges = () => {
                         <span style={{ color: '#bbb', fontWeight: 'bold' }}>OR</span>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                           <span style={{ position: 'absolute', left: '10px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '13px' }}>₹</span>
-                          <input 
-                            type="number" 
-                            value={discountType === 'amount' ? discountValue : (discountAmount ? discountAmount : '')} 
-                            onChange={e => { setDiscountType('amount'); setDiscountValue(e.target.value); }} 
+                          <input
+                            type="number"
+                            value={discountType === 'amount' ? discountValue : (discountAmount ? discountAmount : '')}
+                            onChange={e => { setDiscountType('amount'); setDiscountValue(e.target.value); }}
                             style={{ padding: '10px 10px 10px 22px', width: '110px', borderRadius: '4px', border: '1px solid var(--border)', textAlign: 'right', fontWeight: 'bold', fontSize: '14px', background: discountType === 'amount' && discountValue ? '#fff' : 'var(--off-white)' }}
                             placeholder="0"
                             min="0"
@@ -823,6 +823,12 @@ const Exchanges = () => {
               )}
 
               {completedExchange.discount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: '#666' }}>
+                  <span>Subtotal:</span>
+                  <span>₹{(completedExchange.netAmount + completedExchange.discount).toLocaleString('en-IN')}</span>
+                </div>
+              )}
+              {completedExchange.discount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: 'var(--success)', fontWeight: 600 }}>
                   <span>Discount:</span>
                   <span>-₹{completedExchange.discount.toLocaleString('en-IN')}</span>
@@ -952,8 +958,8 @@ const Exchanges = () => {
                     )}
                     <div style={{ borderTop: '1px dashed #ccc', marginTop: '10px', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '13px' }}>
                       <span>Settlement:</span>
-                      <span style={{ color: ret.net_amount < 0 ? '#2980b9' : '#27ae60' }}>
-                        {ret.net_amount < 0 ? `Credit Voucher Issued ₹${Math.abs(ret.net_amount)}` : `Paid Extra ₹${ret.net_amount}`}
+                      <span style={{ color: (ret.net_amount - (ret.discount || 0)) < 0 ? '#2980b9' : '#27ae60' }}>
+                        {(ret.net_amount - (ret.discount || 0)) < 0 ? `Credit Voucher Issued ₹${Math.abs(ret.net_amount - (ret.discount || 0))}` : `Paid Extra ₹${ret.net_amount - (ret.discount || 0)}`}
                       </span>
                     </div>
                   </div>
@@ -1154,6 +1160,12 @@ const Exchanges = () => {
                   </div>
                 )}
 
+                {viewingBillPreview.discount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: '#666' }}>
+                    <span>Subtotal:</span>
+                    <span>₹{(viewingBillPreview.netAmount + viewingBillPreview.discount).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
                 {viewingBillPreview.discount > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', paddingBottom: '4px', color: 'var(--success)', fontWeight: 600 }}>
                     <span>Discount:</span>
