@@ -176,10 +176,10 @@ const Reports = () => {
         ]);
       });
     } else if (currentReport === 'sales') {
-      rows.push(["Date of Buy", "Date of Sale", "Dealer Name", "Design Number", "Size", "Customer Name", "Contact", "Cost Price", "Sale Price", "Profit", "Payment Mode"]);
+      rows.push(["Date of Buy", "Date of Sale", "Dealer Name", "Design Number", "Size", "Customer Name", "Contact", "Cost Price", "Gross Price", "Discount", "Sale Price", "Profit", "Payment Mode"]);
       getFilteredSalesItems().forEach(item => {
         rows.push([
-          item.buyDate, item.saleDate, item.dealer, item.design, item.size, item.customer, item.contact, item.cost, item.salePrice, item.profit, item.paymentMethod
+          item.buyDate, item.saleDate, item.dealer, item.design, item.size, item.customer, item.contact, item.cost, item.grossPrice, item.discountShare, item.salePrice, item.profit, item.paymentMethod
         ]);
       });
     } else if (currentReport === 'payment') {
@@ -198,8 +198,8 @@ const Reports = () => {
       rows.push(["Category", "Units Sold", "Revenue Generated", "Current Stock Left"]);
       getFilteredProductStats().forEach(ps => rows.push([ps.category, ps.sold, ps.revenue, ps.stock]));
     } else if (currentReport === 'transactions') {
-      rows.push(["Date", "Type", "Reference ID", "Party / Description", "Payment Mode", "Amount"]);
-      getFilteredTransactions().forEach(t => rows.push([t.dateStr, t.type, t.ref, t.party, t.mode, t.amount]));
+      rows.push(["Date", "Type", "Reference ID", "Party / Description", "Payment Mode", "Gross Amount", "Discount", "Final Amount"]);
+      getFilteredTransactions().forEach(t => rows.push([t.dateStr, t.type, t.ref, t.party, t.mode, t.grossAmount, t.discount, t.amount]));
     }
 
     if (rows.length === 0) {
@@ -229,19 +229,38 @@ const Reports = () => {
     });
   };
 
+  // Reconstruct the discount for ANY bill (old or new) using:
+  //   discount = Σ(price_at_sale × qty) − total_amount
+  // total_amount was always saved as the post-discount final amount,
+  // so this formula is exact — no extra DB column needed.
+  const resolveBillDiscount = (bill) => {
+    const itemsSum = (bill.bill_items || []).reduce(
+      (s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0
+    );
+    const paid = Number(bill.total_amount || 0);
+    const discount = itemsSum - paid;
+    return discount > 0 ? Math.round(discount) : 0;
+  };
+
   // 2. Sale Report
   const getFilteredSalesItems = () => {
     const itemsList = [];
     bills.forEach(bill => {
       if (!filterByBranchAndDate(bill.created_at, bill.branch_id)) return;
-      
+
+      const billSubtotal = (bill.bill_items || []).reduce((s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0);
+      const billDiscount = resolveBillDiscount(bill);
+
       (bill.bill_items || []).forEach(bi => {
         const prod = bi.products || {};
         const dealerName = getDealerName(prod.dealer_id, prod.design_number, 'Direct / Unknown');
         const buyDate = prod.created_at ? new Date(prod.created_at).toLocaleDateString('en-IN') : '-';
         const saleDate = bill.created_at ? new Date(bill.created_at).toLocaleDateString('en-IN') : '-';
         const cost = Number(prod.purchase_price || 0) * bi.quantity;
-        const salePrice = Number(bi.price_at_sale || 0) * bi.quantity;
+        const itemGross = Number(bi.price_at_sale || 0) * bi.quantity;
+        // Proportionally distribute the bill-level discount across items
+        const itemDiscountShare = billSubtotal > 0 ? Math.round((itemGross / billSubtotal) * billDiscount) : 0;
+        const salePrice = itemGross - itemDiscountShare;
         const profit = salePrice - cost;
 
         if (matchSearch([prod.design_number, prod.size, prod.category, dealerName, bill.customer_name, bill.customer_phone, bill.payment_method])) {
@@ -256,6 +275,8 @@ const Reports = () => {
             size: prod.size || '-',
             qty: bi.quantity,
             cost,
+            grossPrice: itemGross,
+            discountShare: itemDiscountShare,
             salePrice,
             profit,
             paymentMethod: bill.payment_method || 'Cash'
@@ -384,12 +405,16 @@ const Reports = () => {
 
     bills.forEach(b => {
       if (!filterByBranchAndDate(b.created_at, b.branch_id)) return;
+      const billSubtotal = (b.bill_items || []).reduce((s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0);
+      const billDiscount = resolveBillDiscount(b);
       (b.bill_items || []).forEach(bi => {
         const prod = bi.products || {};
         const cat = prod.category || 'Other';
         if (!map[cat]) map[cat] = { category: cat, sold: 0, revenue: 0, stock: 0 };
         map[cat].sold += bi.quantity;
-        map[cat].revenue += Number(bi.price_at_sale || 0) * bi.quantity;
+        const itemGross = Number(bi.price_at_sale || 0) * bi.quantity;
+        const itemDiscountShare = billSubtotal > 0 ? Math.round((itemGross / billSubtotal) * billDiscount) : 0;
+        map[cat].revenue += itemGross - itemDiscountShare;
       });
     });
 
@@ -402,6 +427,10 @@ const Reports = () => {
     bills.forEach(b => {
       if (!filterByBranchAndDate(b.created_at, b.branch_id)) return;
       if (matchSearch([b.id, b.customer_name, b.customer_phone, 'Sale'])) {
+        const grossAmount = (b.bill_items || []).reduce(
+          (s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0
+        );
+        const discount = resolveBillDiscount(b);
         list.push({
           id: `bill-${b.id}`,
           dateStr: new Date(b.created_at).toLocaleString('en-IN'),
@@ -410,6 +439,8 @@ const Reports = () => {
           ref: b.id.slice(0, 8).toUpperCase(),
           party: `${b.customer_name || 'Walk-in'} (${b.customer_phone || '-'})`,
           mode: b.payment_method || 'Cash',
+          grossAmount,
+          discount,
           amount: Number(b.total_amount),
           isPositive: true
         });
@@ -427,6 +458,8 @@ const Reports = () => {
           ref: e.category,
           party: e.description,
           mode: e.payment_method || 'Cash',
+          grossAmount: Number(e.amount),
+          discount: 0,
           amount: Number(e.amount),
           isPositive: false
         });
@@ -515,6 +548,8 @@ const Reports = () => {
 
     if (currentReport === 'sales') {
       const data = getFilteredSalesItems();
+      const totalGross = data.reduce((s, i) => s + i.grossPrice, 0);
+      const totalDiscount = data.reduce((s, i) => s + i.discountShare, 0);
       const totalRev = data.reduce((s, i) => s + i.salePrice, 0);
       const totalProfit = data.reduce((s, i) => s + i.profit, 0);
 
@@ -522,12 +557,14 @@ const Reports = () => {
         <div>
           <div className="stat-grid" style={{ marginBottom: '20px' }}>
             <div className="stat-card"><div className="label">Total Items Sold</div><div className="value">{data.reduce((s, i) => s + i.qty, 0)} Units</div></div>
-            <div className="stat-card"><div className="label">Total Sales Revenue</div><div className="value">₹{totalRev.toLocaleString('en-IN')}</div></div>
+            <div className="stat-card"><div className="label">Gross Sale Value</div><div className="value">₹{totalGross.toLocaleString('en-IN')}</div></div>
+            <div className="stat-card"><div className="label">Total Discount Given</div><div className="value" style={{ color: 'var(--danger)' }}>- ₹{totalDiscount.toLocaleString('en-IN')}</div></div>
+            <div className="stat-card"><div className="label">Net Sales Revenue</div><div className="value">₹{totalRev.toLocaleString('en-IN')}</div></div>
             <div className="stat-card"><div className="label">Total Net Profit</div><div className="value" style={{ color: 'var(--success)' }}>₹{totalProfit.toLocaleString('en-IN')}</div></div>
           </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Buy Date</th><th>Sale Date</th><th>Dealer Name</th><th>Customer</th><th>Contact</th><th>Design Number</th><th>Size</th><th>Qty</th><th>Cost</th><th>Sale Price</th><th>Profit</th><th>Mode</th></tr></thead>
+              <thead><tr><th>Buy Date</th><th>Sale Date</th><th>Dealer Name</th><th>Customer</th><th>Contact</th><th>Design Number</th><th>Size</th><th>Qty</th><th>Cost</th><th>Gross Price</th><th>Discount</th><th>Sale Price</th><th>Profit</th><th>Mode</th></tr></thead>
               <tbody>
                 {data.map((item, idx) => (
                   <tr key={idx}>
@@ -540,12 +577,16 @@ const Reports = () => {
                     <td>{item.size}</td>
                     <td>{item.qty}</td>
                     <td>₹{item.cost.toLocaleString('en-IN')}</td>
+                    <td>₹{item.grossPrice.toLocaleString('en-IN')}</td>
+                    <td style={{ color: item.discountShare > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 600 }}>
+                      {item.discountShare > 0 ? `- ₹${item.discountShare.toLocaleString('en-IN')}` : '—'}
+                    </td>
                     <td style={{ fontWeight: 700 }}>₹{item.salePrice.toLocaleString('en-IN')}</td>
                     <td style={{ color: item.profit >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 700 }}>₹{item.profit.toLocaleString('en-IN')}</td>
                     <td><span className="badge badge-blue">{item.paymentMethod}</span></td>
                   </tr>
                 ))}
-                {data.length === 0 && <tr><td colSpan="12" style={{ textAlign: 'center', padding: '20px' }}>No sales records match filter</td></tr>}
+                {data.length === 0 && <tr><td colSpan="14" style={{ textAlign: 'center', padding: '20px' }}>No sales records match filter</td></tr>}
               </tbody>
             </table>
           </div>
@@ -703,7 +744,7 @@ const Reports = () => {
       return (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Date & Time</th><th>Type</th><th>Reference ID</th><th>Party / Description</th><th>Payment Mode</th><th>Amount</th></tr></thead>
+            <thead><tr><th>Date & Time</th><th>Type</th><th>Reference ID</th><th>Party / Description</th><th>Payment Mode</th><th>Gross Amount</th><th>Discount</th><th>Final Amount</th></tr></thead>
             <tbody>
               {data.map((t) => (
                 <tr key={t.id}>
@@ -712,12 +753,18 @@ const Reports = () => {
                   <td><code>{t.ref}</code></td>
                   <td style={{ maxWidth: '250px' }}>{t.party}</td>
                   <td><span className="badge badge-blue">{t.mode}</span></td>
+                  <td style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+                    {t.isPositive ? `₹${t.grossAmount.toLocaleString('en-IN')}` : `- ₹${t.grossAmount.toLocaleString('en-IN')}`}
+                  </td>
+                  <td style={{ color: t.discount > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 600, fontSize: '13px' }}>
+                    {t.discount > 0 ? `- ₹${t.discount.toLocaleString('en-IN')}` : '—'}
+                  </td>
                   <td style={{ fontWeight: 700, fontSize: '14px', color: t.isPositive ? 'var(--success)' : 'var(--danger)' }}>
                     {t.isPositive ? '+ ' : '- '}₹{t.amount.toLocaleString('en-IN')}
                   </td>
                 </tr>
               ))}
-              {data.length === 0 && <tr><td colSpan="6" style={{ textAlign: 'center', padding: '20px' }}>No transactions match filter</td></tr>}
+              {data.length === 0 && <tr><td colSpan="8" style={{ textAlign: 'center', padding: '20px' }}>No transactions match filter</td></tr>}
             </tbody>
           </table>
         </div>
