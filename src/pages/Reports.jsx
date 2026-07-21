@@ -3,9 +3,9 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../services/supabaseClient';
 import { db } from '../services/db';
 import toast from 'react-hot-toast';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
-  PieChart, Pie, Cell, LineChart, Line 
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line
 } from 'recharts';
 
 const COLORS = ['#C5A059', '#1E4620', '#003366', '#8B0000', '#CC5500', '#666666', '#00C49F', '#FFBB28', '#FF8042'];
@@ -13,7 +13,7 @@ const COLORS = ['#C5A059', '#1E4620', '#003366', '#8B0000', '#CC5500', '#666666'
 const Reports = () => {
   const { user } = useAuth();
   const [currentReport, setCurrentReport] = useState('stock');
-  
+
   // Data States
   const [bills, setBills] = useState([]);
   const [products, setProducts] = useState([]);
@@ -62,7 +62,7 @@ const Reports = () => {
       let billsQuery = supabase.from('bills').select('*, bill_items(*, products(*)), branches(name)').order('created_at', { ascending: false });
       let productsQuery = supabase.from('products').select('*, branches(name)').order('created_at', { ascending: false });
       let exchangesQuery = supabase.from('returns_exchanges').select('*, branches(name)').order('created_at', { ascending: false });
-      
+
       if (user.role !== 'superadmin') {
         billsQuery = billsQuery.eq('branch_id', user.branch_id);
         productsQuery = productsQuery.eq('branch_id', user.branch_id);
@@ -105,7 +105,7 @@ const Reports = () => {
   const getDealerName = (dealerId, designNumber, fallback = 'Direct') => {
     if (dealerId && dealerMap[dealerId]) return dealerMap[dealerId];
     if (!designNumber) return fallback;
-    
+
     const cleanDn = designNumber.trim().toUpperCase();
     const prefixMatch = cleanDn.match(/^([A-Z]+)/);
     if (!prefixMatch) return fallback;
@@ -250,7 +250,7 @@ const Reports = () => {
   // 2. Sale Report
   const getFilteredSalesItems = () => {
     const itemsList = [];
-    
+
     // Standard Sales
     bills.forEach(bill => {
       if (!filterByBranchAndDate(bill.created_at, bill.branch_id)) return;
@@ -303,10 +303,10 @@ const Reports = () => {
       // Fall back to original item product details if not found in active products catalog
       const returnedProd = products.find(p => p.id === ex.returned_product_id) || (origItem?.products || {});
       const exchangedProd = products.find(p => p.id === ex.exchanged_product_id) || (ex.exchanged_product || {});
-      
+
       const dealerNameRet = getDealerName(returnedProd.dealer_id, returnedProd.design_number, 'Direct / Unknown');
       const dealerNameExch = getDealerName(exchangedProd.dealer_id, exchangedProd.design_number, 'Direct / Unknown');
-      
+
       const saleDate = ex.created_at ? new Date(ex.created_at).toLocaleDateString('en-IN') : '-';
 
       // 1. Process Return Part (Negative Sale entry to subtract from totals)
@@ -314,14 +314,14 @@ const Reports = () => {
         const priceAtSale = origItem ? Number(origItem.price_at_sale) : Number(returnedProd.selling_price || 0);
         const billSubtotal = origBill ? (origBill.bill_items || []).reduce((s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0) : 0;
         const billDiscount = origBill ? resolveBillDiscount(origBill) : 0;
-        
+
         const buyDate = returnedProd.created_at ? new Date(returnedProd.created_at).toLocaleDateString('en-IN') : '-';
         const cost = -Number(returnedProd.purchase_price || 0) * ex.returned_qty;
         const itemGross = -priceAtSale * ex.returned_qty;
-        
+
         const origItemGross = priceAtSale * ex.returned_qty;
         const itemDiscountShare = (billSubtotal > 0 && billDiscount > 0) ? Math.round((origItemGross / billSubtotal) * billDiscount) : 0;
-        
+
         const salePrice = -(origItemGross - itemDiscountShare);
         const profit = salePrice - cost;
 
@@ -539,7 +539,7 @@ const Reports = () => {
       if (!filterByBranchAndDate(p.date || p.created_at, p.branch_id)) return;
       const prod = products.find(prod => prod.id === p.product_id) || {};
       const dealerName = getDealerName(p.dealer_id || prod.dealer_id, p.design_number || prod.design_number, 'Direct');
-      
+
       if (matchSearch([prod.design_number, prod.category, dealerName])) {
         list.push({
           id: p.id,
@@ -576,7 +576,7 @@ const Reports = () => {
       if (!filterByBranchAndDate(ex.created_at, ex.branch_id)) return;
       const d = new Date(ex.created_at).toLocaleDateString('en-IN');
       if (!dateMap[d]) dateMap[d] = { date: d, revenue: 0, cogs: 0, expenses: 0 };
-      
+
       dateMap[d].revenue += Number(ex.net_amount || 0);
 
       if (ex.returned_product_id && ex.returned_qty > 0) {
@@ -646,7 +646,7 @@ const Reports = () => {
           const priceAtSale = origItem ? Number(origItem.price_at_sale) : Number(returnedProd.selling_price || 0);
           const billSubtotal = origBill ? (origBill.bill_items || []).reduce((s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0) : 0;
           const billDiscount = origBill ? resolveBillDiscount(origBill) : 0;
-          
+
           const itemGross = priceAtSale * ex.returned_qty;
           const itemDiscountShare = (billSubtotal > 0 && billDiscount > 0) ? Math.round((itemGross / billSubtotal) * billDiscount) : 0;
           const netReturnVal = itemGross - itemDiscountShare;
@@ -1093,14 +1093,14 @@ const Reports = () => {
     <div className="page active" id="reports-page">
       <div className="page-title">Analytics & Enterprise Reports</div>
       <div className="page-sub">Comprehensive financial, inventory, and branch performance insights</div>
-      
+
       {/* Report Selection Grid */}
       <div className="report-grid">
         {reportsList.map((r) => {
           const isSelected = currentReport === r.key;
           return (
-            <div 
-              key={r.key} 
+            <div
+              key={r.key}
               className={`report-btn ${isSelected ? 'active' : ''}`}
               onClick={() => setCurrentReport(r.key)}
               style={isSelected ? { borderColor: 'var(--gold)', backgroundColor: '#FDFBF7' } : {}}
@@ -1114,16 +1114,16 @@ const Reports = () => {
           );
         })}
       </div>
-      
+
       {/* Filter & Search Bar */}
       <div className="card no-print" style={{ padding: '20px 24px', marginBottom: '28px', backgroundColor: '#FAFAFA', borderRadius: '12px', border: '1px solid var(--border)' }}>
-        
+
         {/* Search Bar Row */}
         <div style={{ marginBottom: '16px' }}>
-          <input 
-            type="text" 
-            className="form-control" 
-            placeholder="🔍 Search across active report records (e.g. design number, dealer name, customer name, phone, category)..." 
+          <input
+            type="text"
+            className="form-control"
+            placeholder="🔍 Search across active report records (e.g. design number, dealer name, customer name, phone, category)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{ width: '100%', marginBottom: 0, backgroundColor: 'var(--white)', padding: '12px 18px', fontSize: '14px', borderRadius: '8px', border: '1.5px solid var(--border)' }}
@@ -1165,7 +1165,7 @@ const Reports = () => {
 
       {/* Report Output Area */}
       <div className="report-output card" style={{ padding: '24px' }}>
-        
+
         {/* Printable Header */}
         <div className="print-only" style={{ textAlign: 'center', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid #000' }}>
           <img src="/images/logo%20black.png" alt="Kiddorin Logo" style={{ maxWidth: '180px', maxHeight: '60px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} />
