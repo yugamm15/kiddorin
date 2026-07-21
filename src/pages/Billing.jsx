@@ -133,7 +133,7 @@ const Billing = () => {
       const sCashAmt = paymentMethod === 'split' ? (parseFloat(splitCash) || 0) : (paymentMethod === 'cash' ? finalAmount : 0);
       const sUpiAmt = paymentMethod === 'split' ? Math.max(0, finalAmount - sCashAmt) : (paymentMethod === 'upi' ? finalAmount : 0);
       const payStr = finalAmount === 0 ? 'Store Credit' : (
-        paymentMethod === 'cash' ? 'Cash' : (paymentMethod === 'upi' ? 'UPI' : `Split (Cash: ₹${sCashAmt}, GPay: ₹${sUpiAmt})`)
+        paymentMethod === 'cash' ? 'Cash' : (paymentMethod === 'upi' ? 'UPI' : `Split (Cash: ₹${sCashAmt}, UPI: ₹${sUpiAmt})`)
       );
 
       // Create a mapped array for db service

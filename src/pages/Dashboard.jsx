@@ -7,8 +7,9 @@ const Dashboard = () => {
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
-    if (user?.branch_id) {
-      db.getDashboardStats(user.branch_id).then(setStats);
+    const targetBranch = user?.role === 'superadmin' ? 'all' : user?.branch_id;
+    if (targetBranch) {
+      db.getDashboardStats(targetBranch).then(setStats);
     }
   }, [user]);
 
@@ -50,7 +51,7 @@ const Dashboard = () => {
           </div>
           <div className="label">Total Stock</div>
           <div className="value">{stats.totalStock}</div>
-          <div className="sub">pieces across all branches</div>
+          <div className="sub">pieces in stock</div>
         </div>
         
         <div className="stat-card">
@@ -94,8 +95,8 @@ const Dashboard = () => {
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M7 7h10M7 11h6M7 15h8M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
           </div>
           <div className="label">Products</div>
-          <div className="value">{stats.totalStock}</div>
-          <div className="sub">unique product entries</div>
+          <div className="value">{stats.totalProducts}</div>
+          <div className="sub">unique product designs</div>
         </div>
       </div>
       
@@ -116,14 +117,14 @@ const Dashboard = () => {
               <tbody>
                 {stats.recentTransactions.map(b => (
                   <tr key={b.id}>
-                    <td><strong>{b.id}</strong></td>
-                    <td><strong>₹{b.total_amount.toLocaleString('en-IN')}</strong></td>
+                    <td><strong>{b.id.slice(0, 8).toUpperCase()}</strong></td>
+                    <td><strong>₹{Number(b.total_amount || 0).toLocaleString('en-IN')}</strong></td>
                     <td>
-                      <span className={`badge ${b.payment_method === 'Cash' ? 'badge-green' : 'badge-blue'}`}>
-                        {b.payment_method.toUpperCase()}
+                      <span className={`badge ${(b.payment_method || '').toLowerCase().includes('cash') ? 'badge-green' : 'badge-blue'}`}>
+                        {(b.payment_method || 'Cash').toUpperCase()}
                       </span>
                     </td>
-                    <td>{user.branch.name}</td>
+                    <td>{b.branches?.name || user?.branch?.name || 'Main Store'}</td>
                     <td>{new Date(b.created_at).toLocaleString('en-IN')}</td>
                   </tr>
                 ))}

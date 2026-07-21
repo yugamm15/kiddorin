@@ -242,7 +242,7 @@ const Exchanges = () => {
 
       const sCashAmt = parseFloat(splitCash) || 0;
       const sUpiAmt = Math.max(0, netDiff - sCashAmt);
-      const finalPayMethod = paymentMethod === 'Split' ? `Split (Cash: ₹${sCashAmt}, GPay: ₹${sUpiAmt})` : paymentMethod;
+      const finalPayMethod = paymentMethod === 'Split' ? `Split (Cash: ₹${sCashAmt}, UPI: ₹${sUpiAmt})` : paymentMethod;
 
       const payload = {
         branch_id: user.branch_id,
@@ -252,7 +252,8 @@ const Exchanges = () => {
         returns: returnsPayload,
         exchanges: exchangesPayload,
         overall_net_amount: netDiff,
-        discount: discountAmount
+        discount: discountAmount,
+        payment_method: netDiff > 0 ? finalPayMethod : (netDiff < 0 ? 'Store Credit Note' : 'Even Exchange')
       };
 
       const result = await db.processMultipleExchange(payload);

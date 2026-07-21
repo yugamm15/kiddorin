@@ -37,7 +37,7 @@ const Expenses = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      let billsQuery = supabase.from('bills').select('total_amount, payment_method, created_at, branch_id');
+      let billsQuery = supabase.from('bills').select('total_amount, payment_method, split_cash, split_upi, created_at, branch_id');
       if (selectedBranchFilter !== 'all') {
         billsQuery = billsQuery.eq('branch_id', selectedBranchFilter);
       }
@@ -137,8 +137,34 @@ const Expenses = () => {
   const upiAmount = filteredExpenses.filter(e => e.payment_method === 'UPI').reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
 
   // Calculate Sales Inflow
-  const cashSales = filteredBills.filter(b => (b.payment_method || 'Cash').toLowerCase() === 'cash').reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
-  const upiSales = filteredBills.filter(b => (b.payment_method || '').toLowerCase() === 'upi').reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  let cashSales = 0;
+  let upiSales = 0;
+  filteredBills.forEach(b => {
+    const pm = (b.payment_method || '').toLowerCase();
+    if (pm === 'cash') {
+      cashSales += Number(b.total_amount || 0);
+    } else if (pm === 'upi') {
+      upiSales += Number(b.total_amount || 0);
+    } else if (pm.includes('split') || Number(b.split_cash || 0) > 0 || Number(b.split_upi || 0) > 0) {
+      let sc = Number(b.split_cash || 0);
+      let su = Number(b.split_upi || 0);
+      if (sc === 0 && su === 0 && pm.includes('split')) {
+        const match = pm.match(/Cash:\s*₹?([\d.]+).*?(?:GPay|UPI):\s*₹?([\d.]+)/i) || (b.payment_method || '').match(/₹?([\d.]+).*?₹?([\d.]+)/);
+        if (match) {
+          sc = parseFloat(match[1]) || 0;
+          su = parseFloat(match[2]) || 0;
+        } else {
+          const tot = Number(b.total_amount || 0);
+          sc = tot / 2;
+          su = tot / 2;
+        }
+      }
+      cashSales += sc;
+      upiSales += su;
+    } else {
+      cashSales += Number(b.total_amount || 0);
+    }
+  });
   const totalSales = cashSales + upiSales;
 
   // Net Balances

@@ -362,50 +362,93 @@ class SupabaseDB {
     return newBill;
   }
 
-  async getDashboardStats(branch_id) {
-    const today = new Date().toISOString().split('T')[0];
+  async getDashboardStats(branch_id = null) {
+    try {
+      // 1. Fetch Products
+      let pQuery = supabase
+        .from('products')
+        .select('id, quantity')
+        .eq('is_active', true);
 
-    // Fetch Products
-    const { data: products } = await supabase
-      .from('products')
-      .select('quantity')
-      .eq('branch_id', branch_id)
-      .eq('is_active', true);
+      if (branch_id && branch_id !== 'all') {
+        pQuery = pQuery.eq('branch_id', branch_id);
+      }
 
-    const totalStock = products ? products.reduce((sum, p) => sum + p.quantity, 0) : 0;
-    const lowStockCount = products ? products.filter(p => p.quantity < 5).length : 0;
+      const { data: prods } = await pQuery;
+      const validProds = prods || [];
 
-    // Fetch Bills for today
-    const { data: todayBills } = await supabase
-      .from('bills')
-      .select('total_amount, created_at')
-      .eq('branch_id', branch_id)
-      .gte('created_at', `${today}T00:00:00Z`);
+      // Total quantity of physical pieces in stock
+      const totalStock = validProds.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0);
+      // Count of unique product catalog entries
+      const totalProducts = validProds.length;
+      // Low stock: items with stock > 0 and <= 5 pieces remaining
+      const lowStockAlerts = validProds.filter(p => Number(p.quantity) > 0 && Number(p.quantity) <= 5).length;
 
-    const todaySalesCount = todayBills ? todayBills.length : 0;
-    const todayRevenue = todayBills ? todayBills.reduce((sum, b) => sum + Number(b.total_amount), 0) : 0;
+      // 2. Fetch Bills (Total Bills & Total Revenue)
+      let bQuery = supabase
+        .from('bills')
+        .select('id, total_amount, payment_method, created_at, branch_id');
 
-    // Fetch Branches count
-    const { count: totalBranches } = await supabase
-      .from('branches')
-      .select('*', { count: 'exact', head: true });
+      if (branch_id && branch_id !== 'all') {
+        bQuery = bQuery.eq('branch_id', branch_id);
+      }
 
-    // Recent Transactions
-    const { data: recentTransactions } = await supabase
-      .from('bills')
-      .select('*')
-      .eq('branch_id', branch_id)
-      .order('created_at', { ascending: false })
-      .limit(5);
+      const { data: bills } = await bQuery;
+      const validBills = bills || [];
 
-    return {
-      totalStock,
-      todaySalesCount,
-      todayRevenue,
-      totalBranches: totalBranches || 1,
-      lowStockAlerts: lowStockCount,
-      recentTransactions: recentTransactions || []
-    };
+      const todaySalesCount = validBills.length;
+      let totalRevenue = validBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+
+      // Factor in Returns & Exchanges net amounts to total revenue
+      let exQuery = supabase.from('returns_exchanges').select('net_amount, branch_id');
+      if (branch_id && branch_id !== 'all') {
+        exQuery = exQuery.eq('branch_id', branch_id);
+      }
+      const { data: exData } = await exQuery;
+      if (exData && exData.length > 0) {
+        const netEx = exData.reduce((sum, e) => sum + Number(e.net_amount || 0), 0);
+        totalRevenue += netEx;
+      }
+
+      // 3. Branches Count
+      const { count: totalBranches } = await supabase
+        .from('branches')
+        .select('*', { count: 'exact', head: true });
+
+      // 4. Recent Transactions
+      let recQuery = supabase
+        .from('bills')
+        .select('*, branches(name)')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (branch_id && branch_id !== 'all') {
+        recQuery = recQuery.eq('branch_id', branch_id);
+      }
+
+      const { data: recentTransactions } = await recQuery;
+
+      return {
+        totalStock,
+        totalProducts,
+        todaySalesCount,
+        todayRevenue: Math.max(0, totalRevenue),
+        totalBranches: totalBranches || 1,
+        lowStockAlerts,
+        recentTransactions: recentTransactions || []
+      };
+    } catch (err) {
+      console.error("Error in getDashboardStats:", err);
+      return {
+        totalStock: 0,
+        totalProducts: 0,
+        todaySalesCount: 0,
+        todayRevenue: 0,
+        totalBranches: 1,
+        lowStockAlerts: 0,
+        recentTransactions: []
+      };
+    }
   }
 
   async getBranchesWithStats() {
@@ -759,7 +802,7 @@ class SupabaseDB {
   }
 
   async processMultipleExchange(payload) {
-    const { branch_id, original_bill_id, customer_name, customer_phone, returns, exchanges, overall_net_amount, discount } = payload;
+    const { branch_id, original_bill_id, customer_name, customer_phone, returns, exchanges, overall_net_amount, discount, payment_method } = payload;
 
     // 1. Generate paired rows using our helper logic
     const pairedRows = [];
@@ -824,7 +867,8 @@ class SupabaseDB {
         exchanged_qty,
         net_amount: rowNetAmount,
         return_reason: return_reason || 'Return',
-        discount: pairedRows.length === 0 ? (discount || 0) : 0
+        discount: pairedRows.length === 0 ? (discount || 0) : 0,
+        payment_method: payment_method || (overall_net_amount < 0 ? 'Store Credit Note' : 'Even Exchange')
       });
     }
 
