@@ -101,6 +101,21 @@ const Exchanges = () => {
 
       const totalNet = groupRets.reduce((sum, r) => sum + Number(r.net_amount || 0), 0);
       const totalDiscount = groupRets.reduce((sum, r) => sum + Number(r.discount || 0), 0);
+      const netDiff = totalNet - totalDiscount;
+
+      const realPm = groupRets.find(r => r.payment_method && r.payment_method !== 'Store Credit Note')?.payment_method 
+        || (latestRet.payment_method && latestRet.payment_method !== 'Store Credit Note' ? latestRet.payment_method : null);
+
+      let finalPm = realPm;
+      if (!finalPm) {
+        if (netDiff > 0) {
+          finalPm = bill.payment_method || 'Cash';
+        } else if (netDiff < 0) {
+          finalPm = 'Store Credit Note';
+        } else {
+          finalPm = 'Even Exchange';
+        }
+      }
 
       setViewingBillPreview({
         type: 'return',
@@ -110,9 +125,9 @@ const Exchanges = () => {
         customerPhone: latestRet.customer_phone || bill.customer_phone || '',
         returns: returnsList,
         exchanges: exchangesList,
-        netAmount: totalNet - totalDiscount,
+        netAmount: netDiff,
         discount: totalDiscount,
-        paymentMethod: latestRet.payment_method || 'Store Credit Note',
+        paymentMethod: finalPm,
         originalBill: bill
       });
     } else {
@@ -837,7 +852,12 @@ const Exchanges = () => {
               )}
               <div style={{ borderTop: '1px solid #000', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginBottom: '16px' }}>
                 <span>Net Settled:</span>
-                <span>{completedExchange.netAmount > 0 ? `Paid ₹${completedExchange.netAmount} (${completedExchange.paymentMethod})` : `Credit ₹${Math.abs(completedExchange.netAmount)}`}</span>
+                <span>
+                  {completedExchange.netAmount > 0
+                    ? `Paid ₹${completedExchange.netAmount} (${completedExchange.paymentMethod || 'Cash'})`
+                    : (completedExchange.netAmount < 0 ? `Credit ₹${Math.abs(completedExchange.netAmount)} (Store Credit Note)` : 'Even Exchange (₹0)')
+                  }
+                </span>
               </div>
 
               <div style={{ textAlign: 'center', fontSize: '9px', color: '#666' }}>
@@ -1175,7 +1195,12 @@ const Exchanges = () => {
                 )}
                 <div style={{ borderTop: '1px solid #000', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '14px', marginBottom: '16px' }}>
                   <span>Net Settled:</span>
-                  <span>{viewingBillPreview.netAmount > 0 ? `Paid ₹${viewingBillPreview.netAmount} (${viewingBillPreview.paymentMethod})` : `Credit ₹${Math.abs(viewingBillPreview.netAmount)}`}</span>
+                  <span>
+                    {viewingBillPreview.netAmount > 0
+                      ? `Paid ₹${viewingBillPreview.netAmount} (${viewingBillPreview.paymentMethod || 'Cash'})`
+                      : (viewingBillPreview.netAmount < 0 ? `Credit ₹${Math.abs(viewingBillPreview.netAmount)} (Store Credit Note)` : 'Even Exchange (₹0)')
+                    }
+                  </span>
                 </div>
 
                 <div style={{ textAlign: 'center', fontSize: '9px', color: '#666' }}>
