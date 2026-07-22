@@ -22,6 +22,7 @@ const Reports = () => {
   const [expenses, setExpenses] = useState([]);
   const [branches, setBranches] = useState([]);
   const [exchanges, setExchanges] = useState([]);
+  const [customerCredits, setCustomerCredits] = useState([]);
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,6 +36,7 @@ const Reports = () => {
   const titles = {
     stock: '📦 Stock Report',
     sales: '📈 Sale Report',
+    exchange_report: '🔄 Exchange & Return Report',
     payment: '💳 Payment Report',
     branch: '🏪 Branch-wise Report',
     purchase: '🛒 Purchase Report',
@@ -46,6 +48,7 @@ const Reports = () => {
   const reportsList = [
     { key: 'stock', icon: '📦', title: 'Stock Report', desc: 'Inventory & pricing' },
     { key: 'sales', icon: '📈', title: 'Sale Report', desc: 'Customer margins & sales' },
+    { key: 'exchange_report', icon: '🔄', title: 'Exchange & Return', desc: 'Returns, exchanges & credit notes' },
     { key: 'payment', icon: '💳', title: 'Payment Report', desc: 'Cash vs UPI breakdown' },
     { key: 'branch', icon: '🏪', title: 'Branch-wise Report', desc: 'Store sales comparison' },
     { key: 'purchase', icon: '🛒', title: 'Purchase Report', desc: 'Dealer stock inflows' },
@@ -61,31 +64,59 @@ const Reports = () => {
       // Fetch bills with items
       let billsQuery = supabase.from('bills').select('*, bill_items(*, products(*)), branches(name)').order('created_at', { ascending: false });
       let productsQuery = supabase.from('products').select('*, branches(name)').order('created_at', { ascending: false });
-      let exchangesQuery = supabase.from('returns_exchanges').select('*, branches(name)').order('created_at', { ascending: false });
+      let exchangesQuery = supabase.from('returns_exchanges').select('*, branches(name), exchanged_product:products!exchanged_product_id(*), returned_product:products!returned_product_id(*)').order('created_at', { ascending: false });
+      let creditsQuery = supabase.from('customer_credits').select('*');
 
       if (user.role !== 'superadmin') {
         billsQuery = billsQuery.eq('branch_id', user.branch_id);
-        productsQuery = productsQuery.eq('branch_id', user.branch_id);
         exchangesQuery = exchangesQuery.eq('branch_id', user.branch_id);
+        creditsQuery = creditsQuery.eq('branch_id', user.branch_id);
       }
 
-      const [bRes, pRes, dRes, purRes, expRes, brRes, exRes] = await Promise.all([
+      const [bRes, pRes, dRes, purRes, expRes, brRes, exRes, credRes] = await Promise.all([
         billsQuery,
         productsQuery,
         supabase.from('dealers').select('*'),
         supabase.from('purchases').select('*').order('date', { ascending: false }),
         db.getExpenses('all'),
         supabase.from('branches').select('*'),
-        exchangesQuery
+        exchangesQuery,
+        creditsQuery
       ]);
 
+      const fetchedProducts = pRes.data || [];
+      const fetchedExchanges = exRes.data || [];
+
+      // Fetch any missing product details referenced in exchanges/returns
+      const missingIds = new Set();
+      fetchedExchanges.forEach(ex => {
+        if (ex.exchanged_product_id && !fetchedProducts.some(p => p.id === ex.exchanged_product_id)) {
+          missingIds.add(ex.exchanged_product_id);
+        }
+        if (ex.returned_product_id && !fetchedProducts.some(p => p.id === ex.returned_product_id)) {
+          missingIds.add(ex.returned_product_id);
+        }
+      });
+
+      let allProducts = [...fetchedProducts];
+      if (missingIds.size > 0) {
+        const { data: extraProds } = await supabase
+          .from('products')
+          .select('*, branches(name)')
+          .in('id', Array.from(missingIds));
+        if (extraProds && extraProds.length > 0) {
+          allProducts = [...allProducts, ...extraProds];
+        }
+      }
+
       setBills(bRes.data || []);
-      setProducts(pRes.data || []);
+      setProducts(allProducts);
       setDealers(dRes.data || []);
       setPurchases(purRes.data || []);
       setExpenses(expRes || []);
       setBranches(brRes.data || []);
-      setExchanges(exRes.data || []);
+      setExchanges(fetchedExchanges);
+      setCustomerCredits(credRes.data || []);
     } catch (err) {
       console.error(err);
       setError('Failed to load report data.');
@@ -187,6 +218,13 @@ const Reports = () => {
           item.type || 'Sale', item.buyDate, item.saleDate, item.dealer, item.design, item.size, item.customer, item.contact, item.qty, item.cost, item.grossPrice, item.discountShare, item.salePrice, item.profit, item.paymentMethod
         ]);
       });
+    } else if (currentReport === 'exchange_report') {
+      rows.push(["Customer Name", "Contact", "Last Activity Date", "Returned Items", "Total Returned Value", "Replacement Items", "Total Replacement Value", "Net Settled", "Payment Mode(s)", "Remaining Credit Balance"]);
+      getFilteredExchangeReport().forEach(c => {
+        rows.push([
+          c.customerName, c.customerPhone, c.dateStr, c.returnedItems.join(" | ") || "None", c.totalReturnedVal, c.exchangedItems.join(" | ") || "None", c.totalExchangedVal, c.netAmount, c.modesStr, c.creditBalance
+        ]);
+      });
     } else if (currentReport === 'payment') {
       rows.push(["Payment Mode", "Total Bills", "Total Revenue"]);
       getFilteredPaymentStats().forEach(s => rows.push([s.mode, s.count, s.revenue]));
@@ -234,10 +272,6 @@ const Reports = () => {
     });
   };
 
-  // Reconstruct the discount for ANY bill (old or new) using:
-  //   discount = Σ(price_at_sale × qty) − total_amount
-  // total_amount was always saved as the post-discount final amount,
-  // so this formula is exact — no extra DB column needed.
   const resolveBillDiscount = (bill) => {
     const itemsSum = (bill.bill_items || []).reduce(
       (s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0
@@ -247,11 +281,10 @@ const Reports = () => {
     return discount > 0 ? Math.round(discount) : 0;
   };
 
-  // 2. Sale Report
+  // 2. Sale Report (Pure POS Sales only)
   const getFilteredSalesItems = () => {
     const itemsList = [];
 
-    // Standard Sales
     bills.forEach(bill => {
       if (!filterByBranchAndDate(bill.created_at, bill.branch_id)) return;
 
@@ -265,7 +298,6 @@ const Reports = () => {
         const saleDate = bill.created_at ? new Date(bill.created_at).toLocaleDateString('en-IN') : '-';
         const cost = Number(prod.purchase_price || 0) * bi.quantity;
         const itemGross = Number(bi.price_at_sale || 0) * bi.quantity;
-        // Proportionally distribute the bill-level discount across items
         const itemDiscountShare = billSubtotal > 0 ? Math.round((itemGross / billSubtotal) * billDiscount) : 0;
         const salePrice = itemGross - itemDiscountShare;
         const profit = salePrice - cost;
@@ -293,93 +325,102 @@ const Reports = () => {
       });
     });
 
-    // Returns & Exchanges
+    return itemsList;
+  };
+
+  // 3. Exchange & Return Report (Customer-Wise)
+  const getFilteredExchangeReport = () => {
+    const customerMap = {};
+
     exchanges.forEach(ex => {
       if (!filterByBranchAndDate(ex.created_at, ex.branch_id)) return;
+
+      const rawPhone = (ex.customer_phone || '').trim();
+      const rawName = (ex.customer_name || 'Walk-in Customer').trim();
+      const key = rawPhone.length >= 7 ? rawPhone : rawName.toLowerCase();
+
+      if (!customerMap[key]) {
+        const custCredit = customerCredits.find(c => c.customer_phone && rawPhone.length >= 7 && c.customer_phone.trim() === rawPhone);
+        customerMap[key] = {
+          customerName: rawName,
+          customerPhone: rawPhone || '-',
+          lastDate: ex.created_at,
+          returnedItems: [],
+          exchangedItems: [],
+          totalReturnedVal: 0,
+          totalExchangedVal: 0,
+          netAmount: 0,
+          paymentModes: new Set(),
+          creditBalance: custCredit ? Number(custCredit.balance || 0) : 0
+        };
+      }
+
+      const entry = customerMap[key];
+      if (new Date(ex.created_at) > new Date(entry.lastDate)) {
+        entry.lastDate = ex.created_at;
+      }
 
       const origBill = bills.find(b => b.id === ex.original_bill_id);
       const origItem = origBill ? (origBill.bill_items || []).find(bi => bi.product_id === ex.returned_product_id) : null;
 
-      // Fall back to original item product details if not found in active products catalog
-      const returnedProd = products.find(p => p.id === ex.returned_product_id) || (origItem?.products || {});
-      const exchangedProd = products.find(p => p.id === ex.exchanged_product_id) || (ex.exchanged_product || {});
+      const returnedProd = ex.returned_product || products.find(p => p.id === ex.returned_product_id) || (origItem?.products || {});
+      const exchangedProd = ex.exchanged_product || products.find(p => p.id === ex.exchanged_product_id) || {};
 
-      const dealerNameRet = getDealerName(returnedProd.dealer_id, returnedProd.design_number, 'Direct / Unknown');
-      const dealerNameExch = getDealerName(exchangedProd.dealer_id, exchangedProd.design_number, 'Direct / Unknown');
+      const retPrice = Number(origItem?.price_at_sale || returnedProd.selling_price || ex.returned_price || 0);
 
-      const saleDate = ex.created_at ? new Date(ex.created_at).toLocaleDateString('en-IN') : '-';
-
-      // 1. Process Return Part (Negative Sale entry to subtract from totals)
-      if (ex.returned_product_id && ex.returned_qty > 0) {
-        const priceAtSale = origItem ? Number(origItem.price_at_sale) : Number(returnedProd.selling_price || 0);
-        const billSubtotal = origBill ? (origBill.bill_items || []).reduce((s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0) : 0;
-        const billDiscount = origBill ? resolveBillDiscount(origBill) : 0;
-
-        const buyDate = returnedProd.created_at ? new Date(returnedProd.created_at).toLocaleDateString('en-IN') : '-';
-        const cost = -Number(returnedProd.purchase_price || 0) * ex.returned_qty;
-        const itemGross = -priceAtSale * ex.returned_qty;
-
-        const origItemGross = priceAtSale * ex.returned_qty;
-        const itemDiscountShare = (billSubtotal > 0 && billDiscount > 0) ? Math.round((origItemGross / billSubtotal) * billDiscount) : 0;
-
-        const salePrice = -(origItemGross - itemDiscountShare);
-        const profit = salePrice - cost;
-
-        if (matchSearch([returnedProd.design_number, returnedProd.size, returnedProd.category, dealerNameRet, ex.customer_name, ex.customer_phone, 'Return'])) {
-          itemsList.push({
-            id: `ret-item-${ex.id}`,
-            type: 'Return',
-            buyDate,
-            saleDate,
-            dealer: dealerNameRet,
-            customer: `${ex.customer_name || 'Walk-in'} (Return)`,
-            contact: ex.customer_phone || '-',
-            design: `${returnedProd.design_number || 'Item'} (Ret)`,
-            size: returnedProd.size || '-',
-            qty: -ex.returned_qty,
-            cost,
-            grossPrice: itemGross,
-            discountShare: -itemDiscountShare,
-            salePrice,
-            profit,
-            paymentMethod: 'Return'
-          });
-        }
+      if (ex.returned_product_id) {
+        const retValue = retPrice * (ex.returned_qty || 1);
+        const design = returnedProd.design_number ? `#${returnedProd.design_number}` : '';
+        const cat = returnedProd.category || 'Returned Item';
+        const size = returnedProd.size ? `(${returnedProd.size})` : '';
+        const name = `${cat} ${size} ${design}`.trim();
+        const reason = ex.return_reason ? ` [Reason: ${ex.return_reason}]` : '';
+        entry.returnedItems.push(`${name}${reason}`);
+        entry.totalReturnedVal += retValue;
       }
 
-      // 2. Process Exchange Part (Positive Sale entry for replacement item bought)
-      if (ex.exchanged_product_id && ex.exchanged_qty > 0) {
-        const buyDate = exchangedProd.created_at ? new Date(exchangedProd.created_at).toLocaleDateString('en-IN') : '-';
-        const cost = Number(exchangedProd.purchase_price || 0) * ex.exchanged_qty;
-        const itemGross = Number(exchangedProd.selling_price || 0) * ex.exchanged_qty;
-        const itemDiscount = Number(ex.discount || 0);
-        const salePrice = itemGross - itemDiscount;
-        const profit = salePrice - cost;
+      if (ex.exchanged_product_id || Number(ex.exchanged_qty || 0) > 0) {
+        let directExchanged = ex.exchanged_product || products.find(p => p.id === ex.exchanged_product_id) || {};
 
-        if (matchSearch([exchangedProd.design_number, exchangedProd.size, exchangedProd.category, dealerNameExch, ex.customer_name, ex.customer_phone, 'Exchange'])) {
-          itemsList.push({
-            id: `exch-item-${ex.id}`,
-            type: 'Exchange Buy',
-            buyDate,
-            saleDate,
-            dealer: dealerNameExch,
-            customer: `${ex.customer_name || 'Walk-in'} (Exch)`,
-            contact: ex.customer_phone || '-',
-            design: `${exchangedProd.design_number || 'Item'} (Exch)`,
-            size: exchangedProd.size || '-',
-            qty: ex.exchanged_qty,
-            cost,
-            grossPrice: itemGross,
-            discountShare: itemDiscount,
-            salePrice,
-            profit,
-            paymentMethod: 'Exchange'
-          });
-        }
+        // Calculate expected price: direct selling price, or exchanged_price, or mathematically reconstructed from retPrice + net_amount
+        const calcPrice = directExchanged.selling_price 
+          ? Number(directExchanged.selling_price)
+          : (ex.exchanged_price ? Number(ex.exchanged_price) : (retPrice > 0 ? Math.max(0, retPrice + Number(ex.net_amount || 0)) : 0));
+
+        // If direct lookup didn't yield a design/category, search products catalog by exact price match fallback
+        const effectiveExchangedProd = (directExchanged.design_number || directExchanged.category)
+          ? directExchanged
+          : (products.find(p => calcPrice > 0 && Number(p.selling_price || 0) === calcPrice) || directExchanged);
+
+        const exchValue = calcPrice * (ex.exchanged_qty || 1);
+        const designStr = effectiveExchangedProd.design_number ? `#${effectiveExchangedProd.design_number}` : '';
+        const catStr = effectiveExchangedProd.category ? effectiveExchangedProd.category : (effectiveExchangedProd.name || 'Item');
+        const sizeStr = effectiveExchangedProd.size ? `(${effectiveExchangedProd.size})` : '';
+
+        const fullName = `${catStr} ${sizeStr} ${designStr}`.trim();
+        entry.exchangedItems.push(`${fullName}`);
+        entry.totalExchangedVal += exchValue;
+      }
+
+      entry.netAmount += Number(ex.net_amount || 0);
+
+      // Determine Payment Mode: fallback to origBill payment method if missing or generic
+      let pm = ex.payment_method;
+      if (!pm || pm === 'Even Exchange' || (pm === 'Store Credit Note' && Number(ex.net_amount || 0) === 0)) {
+        pm = origBill?.payment_method || 'Cash';
+      }
+      if (pm) {
+        entry.paymentModes.add(pm);
       }
     });
 
-    return itemsList;
+    return Object.values(customerMap).map(c => ({
+      ...c,
+      dateStr: new Date(c.lastDate).toLocaleDateString('en-IN'),
+      modesStr: Array.from(c.paymentModes).join(', ') || 'Even Exchange'
+    })).filter(c => 
+      matchSearch([c.customerName, c.customerPhone, c.modesStr, ...c.returnedItems, ...c.exchangedItems])
+    );
   };
 
   // 3. Payment Report
@@ -902,6 +943,105 @@ const Reports = () => {
                   );
                 })}
                 {data.length === 0 && <tr><td colSpan="15" style={{ textAlign: 'center', padding: '20px' }}>No sales records match filter</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    if (currentReport === 'exchange_report') {
+      const data = getFilteredExchangeReport();
+      const totalReturned = data.reduce((s, i) => s + i.totalReturnedVal, 0);
+      const totalExchanged = data.reduce((s, i) => s + i.totalExchangedVal, 0);
+      const totalCreditBalance = data.reduce((s, i) => s + Number(i.creditBalance || 0), 0);
+
+      return (
+        <div>
+          <div className="stat-grid" style={{ marginBottom: '20px' }}>
+            <div className="stat-card">
+              <div className="label">Total Customers (Return/Exchange)</div>
+              <div className="value">{data.length} Customers</div>
+            </div>
+            <div className="stat-card">
+              <div className="label">Total Value Returned</div>
+              <div className="value" style={{ color: 'var(--danger)' }}>₹{totalReturned.toLocaleString('en-IN')}</div>
+            </div>
+            <div className="stat-card">
+              <div className="label">Total Value Exchanged</div>
+              <div className="value" style={{ color: 'var(--success)' }}>₹{totalExchanged.toLocaleString('en-IN')}</div>
+            </div>
+            <div className="stat-card">
+              <div className="label">Active Customer Credit Notes</div>
+              <div className="value" style={{ color: '#004085' }}>₹{totalCreditBalance.toLocaleString('en-IN')}</div>
+            </div>
+          </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer Details</th>
+                  <th>Last Date</th>
+                  <th>Returned Item(s)</th>
+                  <th>Total Return Value</th>
+                  <th>Replacement Item(s)</th>
+                  <th>Total Exchange Value</th>
+                  <th>Net Settled</th>
+                  <th>Payment Mode(s)</th>
+                  <th>Remaining Credit Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((item, idx) => (
+                  <tr key={idx}>
+                    <td>
+                      <strong>👤 {item.customerName}</strong>
+                      {item.customerPhone !== '-' && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>📞 {item.customerPhone}</div>}
+                    </td>
+                    <td style={{ fontSize: '11px' }}>{item.dateStr}</td>
+                    <td>
+                      {item.returnedItems.length > 0 ? (
+                        <div style={{ fontSize: '12px' }}>
+                          {item.returnedItems.map((r, rIdx) => (
+                            <div key={rIdx} style={{ color: 'var(--danger)', fontWeight: 500 }}>• {r}</div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: '#aaa', fontSize: '12px' }}>None</span>
+                      )}
+                    </td>
+                    <td style={{ fontWeight: 700, color: 'var(--danger)' }}>- ₹{item.totalReturnedVal.toLocaleString('en-IN')}</td>
+                    <td>
+                      {item.exchangedItems.length > 0 ? (
+                        <div style={{ fontSize: '12px' }}>
+                          {item.exchangedItems.map((e, eIdx) => (
+                            <div key={eIdx} style={{ color: 'var(--success)', fontWeight: 500 }}>• {e}</div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: '#888', fontSize: '12px' }}>— (No Replacement)</span>
+                      )}
+                    </td>
+                    <td style={{ fontWeight: 700, color: item.totalExchangedVal > 0 ? 'var(--success)' : '#888' }}>
+                      {item.totalExchangedVal > 0 ? `+ ₹${item.totalExchangedVal.toLocaleString('en-IN')}` : '—'}
+                    </td>
+                    <td style={{ fontWeight: 700, color: item.netAmount > 0 ? 'var(--success)' : (item.netAmount < 0 ? '#004085' : 'var(--dark)') }}>
+                      {item.netAmount > 0 ? `+ ₹${item.netAmount}` : (item.netAmount < 0 ? `- ₹${Math.abs(item.netAmount)}` : '₹0')}
+                    </td>
+                    <td><span className="badge badge-secondary">{item.modesStr}</span></td>
+                    <td>
+                      {item.creditBalance > 0 ? (
+                        <span className="badge badge-yellow" style={{ fontWeight: 700, background: '#fff3cd', color: '#856404', border: '1px solid #ffeeba' }}>
+                          💳 ₹{item.creditBalance.toLocaleString('en-IN')} Balance
+                        </span>
+                      ) : (
+                        <span style={{ color: '#aaa', fontSize: '12px' }}>₹0 (Cleared)</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {data.length === 0 && <tr><td colSpan="9" style={{ textAlign: 'center', padding: '20px' }}>No customer exchange or return records match filter</td></tr>}
               </tbody>
             </table>
           </div>
