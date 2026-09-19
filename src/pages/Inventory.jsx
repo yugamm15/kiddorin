@@ -286,8 +286,8 @@ const Inventory = () => {
                   <td>₹{s.selling_price}</td>
                   <td>{user?.branch?.name}</td>
                   <td>
-                    <span className={`badge ${s.quantity > 0 ? 'badge-green' : 'badge-red'}`}>
-                      {s.quantity > 0 ? 'In Stock' : 'Out'}
+                    <span className={`badge ${s.quantity > 0 ? 'badge-green' : 'badge-red'}`} style={{ fontWeight: 600 }}>
+                      {s.quantity > 0 ? 'In Stock' : 'Out of Stock'}
                     </span>
                   </td>
                   <td style={{ display: 'flex', gap: '6px' }}>

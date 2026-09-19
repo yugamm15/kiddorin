@@ -107,7 +107,8 @@ class SupabaseDB {
         .update({
           quantity: existing.quantity + parseInt(productData.quantity),
           purchase_price: parseFloat(productData.purchase_price),
-          selling_price: parseFloat(productData.selling_price)
+          selling_price: parseFloat(productData.selling_price),
+          dealer_id: productData.dealer_id || existing.dealer_id || null
         })
         .eq('id', existing.id)
         .select()
@@ -160,7 +161,8 @@ class SupabaseDB {
           purchase_price: parseFloat(productData.purchase_price),
           selling_price: parseFloat(productData.selling_price),
           quantity: parseInt(productData.quantity),
-          branch_id: productData.branch_id
+          branch_id: productData.branch_id,
+          dealer_id: productData.dealer_id || null
         }])
         .select()
         .single();

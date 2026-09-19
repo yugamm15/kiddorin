@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../services/supabaseClient';
 import { db } from '../services/db';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line
@@ -29,6 +30,7 @@ const Reports = () => {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [selectedBranch, setSelectedBranch] = useState('all');
+  const [stockStatusFilter, setStockStatusFilter] = useState('all'); // 'all', 'in_stock', 'low_stock', 'out_of_stock'
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -57,35 +59,88 @@ const Reports = () => {
     { key: 'transactions', icon: '🧾', title: 'All Transactions', desc: 'Inflows & outflows' }
   ];
 
+  // Helper to fetch all rows across pages from Supabase (bypasses default 1000 row limit)
+  const fetchAllFromSupabase = async (createQueryFn, pageSize = 1000) => {
+    let allRows = [];
+    let from = 0;
+    while (true) {
+      const query = createQueryFn().range(from, from + pageSize - 1);
+      const { data, error } = await query;
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      allRows.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    return allRows;
+  };
+
   const loadAllData = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Fetch bills with items
-      let billsQuery = supabase.from('bills').select('*, bill_items(*, products(*)), branches(name)').order('created_at', { ascending: false });
-      let productsQuery = supabase.from('products').select('*, branches(name)').order('created_at', { ascending: false });
-      let exchangesQuery = supabase.from('returns_exchanges').select('*, branches(name), exchanged_product:products!exchanged_product_id(*), returned_product:products!returned_product_id(*)').order('created_at', { ascending: false });
-      let creditsQuery = supabase.from('customer_credits').select('*');
+      const getBillsQuery = () => {
+        let q = supabase.from('bills').select('*, bill_items(*, products(*)), branches(name)').order('created_at', { ascending: false });
+        if (user?.role !== 'superadmin' && user?.branch_id) {
+          q = q.eq('branch_id', user.branch_id);
+        }
+        return q;
+      };
 
-      if (user.role !== 'superadmin') {
-        billsQuery = billsQuery.eq('branch_id', user.branch_id);
-        exchangesQuery = exchangesQuery.eq('branch_id', user.branch_id);
-        creditsQuery = creditsQuery.eq('branch_id', user.branch_id);
-      }
+      const getProductsQuery = () => {
+        let q = supabase.from('products').select('*, branches(name)').order('created_at', { ascending: false });
+        if (user?.role !== 'superadmin' && user?.branch_id) {
+          q = q.eq('branch_id', user.branch_id);
+        }
+        return q;
+      };
 
-      const [bRes, pRes, dRes, purRes, expRes, brRes, exRes, credRes] = await Promise.all([
-        billsQuery,
-        productsQuery,
-        supabase.from('dealers').select('*'),
-        supabase.from('purchases').select('*').order('date', { ascending: false }),
-        db.getExpenses('all'),
-        supabase.from('branches').select('*'),
-        exchangesQuery,
-        creditsQuery
+      const getExchangesQuery = () => {
+        let q = supabase.from('returns_exchanges').select('*, branches(name)').order('created_at', { ascending: false });
+        if (user?.role !== 'superadmin' && user?.branch_id) {
+          q = q.eq('branch_id', user.branch_id);
+        }
+        return q;
+      };
+
+      const getPurchasesQuery = () => {
+        let q = supabase.from('purchases').select('*').order('date', { ascending: false });
+        if (user?.role !== 'superadmin' && user?.branch_id) {
+          q = q.eq('branch_id', user.branch_id);
+        }
+        return q;
+      };
+
+      const getCreditsQuery = () => {
+        let q = supabase.from('customer_credits').select('*');
+        if (user?.role !== 'superadmin' && user?.branch_id) {
+          q = q.eq('branch_id', user.branch_id);
+        }
+        return q;
+      };
+
+      const safeFetch = async (fn, fallback = []) => {
+        try {
+          return await fn();
+        } catch (e) {
+          console.warn('Data fetch warning:', e);
+          return fallback;
+        }
+      };
+
+      const [bData, pData, dRes, purData, expRes, brRes, exData, credData] = await Promise.all([
+        safeFetch(() => fetchAllFromSupabase(getBillsQuery)),
+        safeFetch(() => fetchAllFromSupabase(getProductsQuery)),
+        safeFetch(async () => { const { data } = await supabase.from('dealers').select('*'); return data || []; }),
+        safeFetch(() => fetchAllFromSupabase(getPurchasesQuery)),
+        safeFetch(() => db.getExpenses('all')),
+        safeFetch(async () => { const { data } = await supabase.from('branches').select('*'); return data || []; }),
+        safeFetch(() => fetchAllFromSupabase(getExchangesQuery)),
+        safeFetch(() => fetchAllFromSupabase(getCreditsQuery))
       ]);
 
-      const fetchedProducts = pRes.data || [];
-      const fetchedExchanges = exRes.data || [];
+      const fetchedProducts = pData || [];
+      const fetchedExchanges = exData || [];
 
       // Fetch any missing product details referenced in exchanges/returns
       const missingIds = new Set();
@@ -109,14 +164,39 @@ const Reports = () => {
         }
       }
 
-      setBills(bRes.data || []);
+      // Map returned and exchanged product details onto exchange records
+      const prodMap = {};
+      allProducts.forEach(p => { prodMap[p.id] = p; });
+      fetchedExchanges.forEach(ex => {
+        if (!ex.exchanged_product && ex.exchanged_product_id && prodMap[ex.exchanged_product_id]) {
+          ex.exchanged_product = prodMap[ex.exchanged_product_id];
+        }
+        if (!ex.returned_product && ex.returned_product_id && prodMap[ex.returned_product_id]) {
+          ex.returned_product = prodMap[ex.returned_product_id];
+        }
+      });
+
+      // Link dealer_id from purchases to products if product.dealer_id is missing
+      const prodDealerMap = {};
+      purData.forEach(pur => {
+        if (pur.product_id && pur.dealer_id && !prodDealerMap[pur.product_id]) {
+          prodDealerMap[pur.product_id] = pur.dealer_id;
+        }
+      });
+      allProducts.forEach(p => {
+        if (!p.dealer_id && prodDealerMap[p.id]) {
+          p.dealer_id = prodDealerMap[p.id];
+        }
+      });
+
+      setBills(bData || []);
       setProducts(allProducts);
       setDealers(dRes.data || []);
-      setPurchases(purRes.data || []);
+      setPurchases(purData || []);
       setExpenses(expRes || []);
       setBranches(brRes.data || []);
       setExchanges(fetchedExchanges);
-      setCustomerCredits(credRes.data || []);
+      setCustomerCredits(credData || []);
     } catch (err) {
       console.error(err);
       setError('Failed to load report data.');
@@ -133,53 +213,93 @@ const Reports = () => {
   const dealerMap = {};
   dealers.forEach(d => dealerMap[d.id] = d.name);
 
-  const getDealerName = (dealerId, designNumber, fallback = 'Direct') => {
+  const purchaseMap = {};
+  purchases.forEach(p => {
+    if (p.product_id && !purchaseMap[p.product_id]) purchaseMap[p.product_id] = p;
+  });
+
+  const getDealerName = (dealerId, designNumber, fallback = 'Direct', productId = null) => {
+    // 1. Direct ID match from dealerMap
     if (dealerId && dealerMap[dealerId]) return dealerMap[dealerId];
+
+    // 2. Lookup via purchaseMap by productId
+    if (productId && purchaseMap[productId]?.dealer_id && dealerMap[purchaseMap[productId].dealer_id]) {
+      return dealerMap[purchaseMap[productId].dealer_id];
+    }
+
+    // 3. Lookup via any purchase linked to this product ID
+    if (productId) {
+      const matchPur = purchases.find(pur => pur.product_id === productId && pur.dealer_id && dealerMap[pur.dealer_id]);
+      if (matchPur) return dealerMap[matchPur.dealer_id];
+    }
+
     if (!designNumber) return fallback;
 
     const cleanDn = designNumber.trim().toUpperCase();
-    const prefixMatch = cleanDn.match(/^([A-Z]+)/);
-    if (!prefixMatch) return fallback;
-    const prefix = prefixMatch[1];
 
-    // 1. Exact match on prefix
-    let matched = dealers.find(d => d.name.toUpperCase() === prefix);
-    if (matched) return matched.name;
+    // 4. Exact match against verified brand / dealer design prefix abbreviations
+    const customPrefixes = [
+      { prefix: 'BEI', name: 'Beiya' },
+      { prefix: 'BY', name: 'Beiya' },
+      { prefix: 'HD', name: 'HEY DEYAN' },
+      { prefix: 'HC', name: 'HUCAI' },
+      { prefix: 'GS', name: 'GUHO SHAHE' },
+      { prefix: 'FD', name: 'FUN DUO DUO' },
+      { prefix: 'FDD', name: 'FUN DUO DUO' },
+      { prefix: 'SM', name: 'STAR MERRY' },
+      { prefix: 'MR', name: 'MIER' },
+      { prefix: 'MI', name: 'MIER' },
+      { prefix: 'PNG', name: 'PNG' },
+      { prefix: 'LCT', name: 'LCT' },
+      { prefix: 'YDY', name: 'YI DO YING' },
+      { prefix: 'YI', name: 'YI DO YING' },
+      { prefix: 'SYY', name: 'SHAUKNG YAN YANG' },
+      { prefix: 'SY', name: 'SHAUKNG YAN YANG' },
+      { prefix: 'SH', name: 'SHAUKNG YAN YANG' },
+      { prefix: 'BK', name: 'BABY K' },
+      { prefix: 'TK', name: 'Two Kids' },
+      { prefix: 'VK', name: 'VK' },
+      { prefix: 'D', name: 'Dadida - Shijing' },
+      { prefix: 'DD', name: 'Dadida - Shijing' },
+      { prefix: 'JT', name: 'Jthui - Shijing' },
+      { prefix: 'JTH', name: 'Jthui - Shijing' },
+      { prefix: 'MK', name: 'MK Kids - Shijing' },
+      { prefix: 'JM', name: 'Jiami - Shijing' }
+    ];
+    customPrefixes.sort((a, b) => b.prefix.length - a.prefix.length);
 
-    // 2. Prefix is initials of the dealer name
-    matched = dealers.find(d => {
-      const words = d.name.toUpperCase().split(/\s+/);
-      const initials = words.map(w => w[0]).join('');
-      if (initials === prefix) return true;
-      if (words.length > 1) {
-        const partialInitials = words.slice(0, prefix.length).map(w => w[0]).join('');
-        if (partialInitials === prefix) return true;
+    for (const cp of customPrefixes) {
+      if (cleanDn === cp.prefix || cleanDn.startsWith(cp.prefix + '-') || cleanDn.startsWith(cp.prefix + '_') || cleanDn.startsWith(cp.prefix)) {
+        const matched = dealers.find(d => d.name.toLowerCase() === cp.name.toLowerCase());
+        return matched ? matched.name : cp.name;
       }
-      return false;
-    });
-    if (matched) return matched.name;
-
-    // 3. Dealer name starts with prefix
-    matched = dealers.find(d => d.name.toUpperCase().startsWith(prefix));
-    if (matched) return matched.name;
-
-    // 4. Special manual overrides
-    if (prefix === 'HC') {
-      const d = dealers.find(d => d.name.toUpperCase() === 'HUCAI');
-      if (d) return d.name;
     }
-    if (prefix === 'BY') {
-      const d = dealers.find(d => d.name.toUpperCase() === 'BEIYA');
-      if (d) return d.name;
+
+    // 5. Check if any dealer's full name is in the design number
+    for (const d of dealers) {
+      const dName = (d.name || '').trim().toUpperCase();
+      if (dName && (cleanDn === dName || cleanDn.startsWith(dName) || cleanDn.includes(dName))) {
+        return d.name;
+      }
+    }
+
+    // 6. Generic prefix initials matching
+    const prefixMatch = cleanDn.match(/^([A-Z]+)/);
+    if (prefixMatch) {
+      const prefix = prefixMatch[1];
+      let matched = dealers.find(d => {
+        const words = d.name.toUpperCase().split(/\s+/);
+        const initials = words.map(w => w[0]).join('');
+        return initials === prefix;
+      });
+      if (matched) return matched.name;
+
+      matched = dealers.find(d => d.name.toUpperCase().startsWith(prefix));
+      if (matched) return matched.name;
     }
 
     return fallback;
   };
-
-  const purchaseMap = {};
-  purchases.forEach(p => {
-    if (!purchaseMap[p.product_id]) purchaseMap[p.product_id] = p;
-  });
 
   // Filter Helper
   const filterByBranchAndDate = (itemDateStr, branchId) => {
@@ -197,68 +317,154 @@ const Reports = () => {
     return textArray.some(t => t && String(t).toLowerCase().includes(q));
   };
 
-  // CSV Export Logic
-  const exportCSV = () => {
-    let rows = [];
-    const filename = `${currentReport}_report_${new Date().toISOString().split('T')[0]}.csv`;
+  // Enhanced Excel (.xlsx) and CSV Export Logic
+  const exportReport = (format = 'xlsx') => {
+    let headers = [];
+    let dataRows = [];
+    let sheetName = 'Report';
+    const dateStr = new Date().toISOString().split('T')[0];
+    const fileBaseName = `kiddorin_${currentReport}_report_${dateStr}`;
 
     if (currentReport === 'stock') {
-      rows.push(["Date", "Dealer Name", "Design Number", "Color", "Size", "Category", "Cost Price", "Selling Price", "Quantity"]);
+      sheetName = 'Stock Inventory';
+      headers = [
+        "Date Added",
+        "Branch",
+        "Dealer Name",
+        "Design Number",
+        "Category",
+        "Gender",
+        "Color",
+        "Size",
+        "Cost Price (₹)",
+        "Selling Price (₹)",
+        "Available Stock Qty",
+        "Stock Status"
+      ];
       getFilteredStock().forEach(p => {
-        rows.push([
+        const qty = Number(p.quantity || 0);
+        const status = qty <= 0 ? "Out of Stock" : (qty <= 5 ? "Low Stock" : "In Stock");
+        dataRows.push([
           p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN') : '-',
-          getDealerName(p.dealer_id, p.design_number, 'Direct / Unknown'),
-          p.design_number, p.color, p.size || '-', p.category, p.purchase_price, p.selling_price, p.quantity
+          p.branches?.name || 'Main Store',
+          getDealerName(p.dealer_id, p.design_number, 'Direct / Unknown', p.id),
+          p.design_number || '-',
+          p.category || '-',
+          p.gender || 'Unisex',
+          p.color || '-',
+          p.size || '-',
+          Number(p.purchase_price || 0),
+          Number(p.selling_price || 0),
+          qty,
+          status
         ]);
       });
     } else if (currentReport === 'sales') {
-      rows.push(["Type", "Date of Buy", "Date of Sale", "Dealer Name", "Design Number", "Size", "Customer Name", "Contact", "Quantity", "Cost Price", "Gross Price", "Discount", "Sale Price", "Profit", "Payment Mode"]);
+      sheetName = 'Sales Report';
+      headers = ["Type", "Date of Buy", "Date of Sale", "Dealer Name", "Design Number", "Size", "Customer Name", "Contact", "Quantity", "Cost Price (₹)", "Gross Price (₹)", "Discount (₹)", "Sale Price (₹)", "Net Profit (₹)", "Payment Mode"];
       getFilteredSalesItems().forEach(item => {
-        rows.push([
-          item.type || 'Sale', item.buyDate, item.saleDate, item.dealer, item.design, item.size, item.customer, item.contact, item.qty, item.cost, item.grossPrice, item.discountShare, item.salePrice, item.profit, item.paymentMethod
+        dataRows.push([
+          item.type || 'Sale',
+          item.buyDate,
+          item.saleDate,
+          item.dealer,
+          item.design,
+          item.size,
+          item.customer,
+          item.contact,
+          item.qty,
+          item.cost,
+          item.grossPrice,
+          item.discountShare,
+          item.salePrice,
+          item.profit,
+          item.paymentMethod
         ]);
       });
     } else if (currentReport === 'exchange_report') {
-      rows.push(["Customer Name", "Contact", "Last Activity Date", "Returned Items", "Total Returned Value", "Replacement Items", "Total Replacement Value", "Net Settled", "Payment Mode(s)", "Remaining Credit Balance"]);
+      sheetName = 'Exchange & Return';
+      headers = ["Customer Name", "Contact", "Last Activity Date", "Returned Item(s)", "Total Return Value (₹)", "Replacement Item(s)", "Total Exchange Value (₹)", "Net Settled (₹)", "Payment Mode(s)", "Remaining Credit Balance (₹)"];
       getFilteredExchangeReport().forEach(c => {
-        rows.push([
-          c.customerName, c.customerPhone, c.dateStr, c.returnedItems.join(" | ") || "None", c.totalReturnedVal, c.exchangedItems.join(" | ") || "None", c.totalExchangedVal, c.netAmount, c.modesStr, c.creditBalance
+        dataRows.push([
+          c.customerName,
+          c.customerPhone,
+          c.dateStr,
+          c.returnedItems.join(" | ") || "None",
+          c.totalReturnedVal,
+          c.exchangedItems.join(" | ") || "None",
+          c.totalExchangedVal,
+          c.netAmount,
+          c.modesStr,
+          c.creditBalance
         ]);
       });
     } else if (currentReport === 'payment') {
-      rows.push(["Payment Mode", "Total Bills", "Total Revenue"]);
-      getFilteredPaymentStats().forEach(s => rows.push([s.mode, s.count, s.revenue]));
+      sheetName = 'Payment Breakdown';
+      headers = ["Payment Mode", "Total Bills Handled", "Total Revenue (₹)"];
+      getFilteredPaymentStats().forEach(s => {
+        dataRows.push([s.mode, s.count, s.revenue]);
+      });
     } else if (currentReport === 'branch') {
-      rows.push(["Branch Name", "Total Revenue", "Total Bills", "Stock Items"]);
-      getFilteredBranchStats().forEach(b => rows.push([b.name, b.revenue, b.billsCount, b.stockItems]));
+      sheetName = 'Branch Performance';
+      headers = ["Branch Name", "Total Revenue (₹)", "Total Bills Handled", "Current Stock Items (Units)"];
+      getFilteredBranchStats().forEach(b => {
+        dataRows.push([b.name, b.revenue, b.billsCount, b.stockItems]);
+      });
     } else if (currentReport === 'purchase') {
-      rows.push(["Purchase Date", "Dealer Name", "Design Number", "Category", "Quantity Bought", "Purchase Price", "Total Cost"]);
-      getFilteredPurchases().forEach(p => rows.push([p.dateStr, p.dealer, p.design, p.category, p.qty, p.price, p.total]));
+      sheetName = 'Purchases';
+      headers = ["Purchase Date", "Dealer Name", "Design Number", "Category", "Quantity Bought", "Purchase Price (₹)", "Total Cost (₹)"];
+      getFilteredPurchases().forEach(p => {
+        dataRows.push([p.dateStr, p.dealer, p.design, p.category, p.qty, p.price, p.total]);
+      });
     } else if (currentReport === 'profit') {
-      rows.push(["Date", "Sales Revenue", "Cost of Goods", "Shop Expenses", "Net Profit/Loss"]);
-      getFilteredProfitLoss().forEach(pl => rows.push([pl.date, pl.revenue, pl.cogs, pl.expenses, pl.net]));
+      sheetName = 'Profit and Loss';
+      headers = ["Date", "Sales Revenue (₹)", "Cost of Goods Sold (₹)", "Shop Expenses (₹)", "Net Profit / Loss (₹)"];
+      getFilteredProfitLoss().forEach(pl => {
+        dataRows.push([pl.date, pl.revenue, pl.cogs, pl.expenses, pl.net]);
+      });
     } else if (currentReport === 'product') {
-      rows.push(["Category", "Units Sold", "Revenue Generated", "Current Stock Left"]);
-      getFilteredProductStats().forEach(ps => rows.push([ps.category, ps.sold, ps.revenue, ps.stock]));
+      sheetName = 'Product Movement';
+      headers = ["Category / Type", "Total Units Sold", "Revenue Generated (₹)", "Current Stock Remaining (Units)"];
+      getFilteredProductStats().forEach(ps => {
+        dataRows.push([ps.category, ps.sold, ps.revenue, ps.stock]);
+      });
     } else if (currentReport === 'transactions') {
-      rows.push(["Date", "Type", "Reference ID", "Party / Description", "Payment Mode", "Gross Amount", "Discount", "Final Amount"]);
-      getFilteredTransactions().forEach(t => rows.push([t.dateStr, t.type, t.ref, t.party, t.mode, t.grossAmount, t.discount, t.amount]));
+      sheetName = 'All Transactions';
+      headers = ["Date & Time", "Type", "Reference ID", "Party / Description", "Payment Mode", "Gross Amount (₹)", "Discount (₹)", "Final Amount (₹)"];
+      getFilteredTransactions().forEach(t => {
+        dataRows.push([t.dateStr, t.type, t.ref, t.party, t.mode, t.grossAmount, t.discount, t.amount]);
+      });
     }
 
-    if (rows.length === 0) {
+    if (dataRows.length === 0) {
       toast.error("No data available to export.");
       return;
     }
 
-    const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success("CSV file downloaded successfully!");
+    const wsData = [headers, ...dataRows];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Auto-fit column widths based on maximum cell content
+    const colWidths = headers.map((h, colIdx) => {
+      let maxLen = String(h).length;
+      dataRows.forEach(row => {
+        const val = row[colIdx] != null ? String(row[colIdx]) : '';
+        if (val.length > maxLen) maxLen = Math.min(val.length, 45);
+      });
+      return { wch: Math.max(maxLen + 4, 12) };
+    });
+    ws['!cols'] = colWidths;
+
+    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+
+    if (format === 'xlsx') {
+      XLSX.writeFile(wb, `${fileBaseName}.xlsx`);
+      toast.success("Excel (.xlsx) report downloaded successfully! 📊");
+    } else {
+      XLSX.writeFile(wb, `${fileBaseName}.csv`, { bookType: 'csv' });
+      toast.success("CSV report downloaded successfully! 📄");
+    }
   };
 
   // --- REPORT DATA GENERATION ---
@@ -267,8 +473,14 @@ const Reports = () => {
   const getFilteredStock = () => {
     return products.filter(p => {
       if (!filterByBranchAndDate(p.created_at, p.branch_id)) return false;
-      const dealerName = getDealerName(p.dealer_id, p.design_number, 'Direct');
-      return matchSearch([p.design_number, p.color, p.size, p.category, dealerName, p.branches?.name]);
+      const qty = Number(p.quantity || 0);
+      if (stockStatusFilter === 'in_stock' && qty <= 0) return false;
+      if (stockStatusFilter === 'out_of_stock' && qty > 0) return false;
+      if (stockStatusFilter === 'low_stock' && (qty <= 0 || qty > 5)) return false;
+
+      const dealerName = getDealerName(p.dealer_id, p.design_number, 'Direct', p.id);
+      const statusText = qty <= 0 ? 'Out of Stock' : (qty <= 5 ? 'Low Stock' : 'In Stock');
+      return matchSearch([p.design_number, p.color, p.size, p.gender, p.category, dealerName, p.branches?.name, statusText]);
     });
   };
 
@@ -293,7 +505,7 @@ const Reports = () => {
 
       (bill.bill_items || []).forEach(bi => {
         const prod = bi.products || {};
-        const dealerName = getDealerName(prod.dealer_id, prod.design_number, 'Direct / Unknown');
+        const dealerName = getDealerName(prod.dealer_id, prod.design_number, 'Direct / Unknown', prod.id);
         const buyDate = prod.created_at ? new Date(prod.created_at).toLocaleDateString('en-IN') : '-';
         const saleDate = bill.created_at ? new Date(bill.created_at).toLocaleDateString('en-IN') : '-';
         const cost = Number(prod.purchase_price || 0) * bi.quantity;
@@ -383,7 +595,7 @@ const Reports = () => {
         let directExchanged = ex.exchanged_product || products.find(p => p.id === ex.exchanged_product_id) || {};
 
         // Calculate expected price: direct selling price, or exchanged_price, or mathematically reconstructed from retPrice + net_amount
-        const calcPrice = directExchanged.selling_price 
+        const calcPrice = directExchanged.selling_price
           ? Number(directExchanged.selling_price)
           : (ex.exchanged_price ? Number(ex.exchanged_price) : (retPrice > 0 ? Math.max(0, retPrice + Number(ex.net_amount || 0)) : 0));
 
@@ -418,7 +630,7 @@ const Reports = () => {
       ...c,
       dateStr: new Date(c.lastDate).toLocaleDateString('en-IN'),
       modesStr: Array.from(c.paymentModes).join(', ') || 'Even Exchange'
-    })).filter(c => 
+    })).filter(c =>
       matchSearch([c.customerName, c.customerPhone, c.modesStr, ...c.returnedItems, ...c.exchangedItems])
     );
   };
@@ -579,7 +791,7 @@ const Reports = () => {
     purchases.forEach(p => {
       if (!filterByBranchAndDate(p.date || p.created_at, p.branch_id)) return;
       const prod = products.find(prod => prod.id === p.product_id) || {};
-      const dealerName = getDealerName(p.dealer_id || prod.dealer_id, p.design_number || prod.design_number, 'Direct');
+      const dealerName = getDealerName(p.dealer_id || prod.dealer_id, p.design_number || prod.design_number, 'Direct', prod.id || p.product_id);
 
       if (matchSearch([prod.design_number, prod.category, dealerName])) {
         list.push({
@@ -855,27 +1067,135 @@ const Reports = () => {
 
     if (currentReport === 'stock') {
       const data = getFilteredStock();
+      const totalUnits = data.reduce((s, p) => s + Math.max(0, Number(p.quantity || 0)), 0);
+      const totalCostValue = data.reduce((s, p) => s + (Math.max(0, Number(p.quantity || 0)) * Number(p.purchase_price || 0)), 0);
+      const totalRetailValue = data.reduce((s, p) => s + (Math.max(0, Number(p.quantity || 0)) * Number(p.selling_price || 0)), 0);
+      const lowStockCount = data.filter(p => Number(p.quantity) > 0 && Number(p.quantity) <= 5).length;
+      const outOfStockCount = data.filter(p => Number(p.quantity) <= 0).length;
+
       return (
         <div>
+          {/* Summary Stat Cards for Stock */}
+          <div className="stat-grid" style={{ marginBottom: '20px' }}>
+            <div className="stat-card">
+              <div className="label">Total Products Listed</div>
+              <div className="value">{data.length} Designs</div>
+            </div>
+            <div className="stat-card">
+              <div className="label">Total In-Stock Units</div>
+              <div className="value" style={{ color: 'var(--primary)' }}>{totalUnits.toLocaleString('en-IN')} Units</div>
+            </div>
+            <div className="stat-card">
+              <div className="label">Low Stock Alerts (≤ 5)</div>
+              <div className="value" style={{ color: '#b45309' }}>{lowStockCount} Items</div>
+            </div>
+            <div className="stat-card">
+              <div className="label">Out of Stock Items (0)</div>
+              <div className="value" style={{ color: 'var(--danger)' }}>{outOfStockCount} Items</div>
+            </div>
+            <div className="stat-card">
+              <div className="label">Total Purchase Valuation</div>
+              <div className="value" style={{ color: 'var(--dark)' }}>₹{totalCostValue.toLocaleString('en-IN')}</div>
+            </div>
+            <div className="stat-card">
+              <div className="label">Total Retail Valuation</div>
+              <div className="value" style={{ color: 'var(--success)' }}>₹{totalRetailValue.toLocaleString('en-IN')}</div>
+            </div>
+          </div>
+
+          {/* Quick Filter Buttons for Stock Status */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Stock Filter:</span>
+            <button
+              className={`btn ${stockStatusFilter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '6px 12px', fontSize: '12px' }}
+              onClick={() => setStockStatusFilter('all')}
+            >
+              All Items ({products.length})
+            </button>
+            <button
+              className={`btn ${stockStatusFilter === 'in_stock' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '6px 12px', fontSize: '12px' }}
+              onClick={() => setStockStatusFilter('in_stock')}
+            >
+              ✅ In Stock ({products.filter(p => Number(p.quantity) > 0).length})
+            </button>
+            <button
+              className={`btn ${stockStatusFilter === 'low_stock' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '6px 12px', fontSize: '12px', background: stockStatusFilter === 'low_stock' ? '#f59e0b' : '', color: stockStatusFilter === 'low_stock' ? '#fff' : '', borderColor: stockStatusFilter === 'low_stock' ? '#f59e0b' : '' }}
+              onClick={() => setStockStatusFilter('low_stock')}
+            >
+              ⚠️ Low Stock ({products.filter(p => Number(p.quantity) > 0 && Number(p.quantity) <= 5).length})
+            </button>
+            <button
+              className={`btn ${stockStatusFilter === 'out_of_stock' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '6px 12px', fontSize: '12px', background: stockStatusFilter === 'out_of_stock' ? 'var(--danger)' : '', color: stockStatusFilter === 'out_of_stock' ? '#fff' : '', borderColor: stockStatusFilter === 'out_of_stock' ? 'var(--danger)' : '' }}
+              onClick={() => setStockStatusFilter('out_of_stock')}
+            >
+              ❌ Out of Stock ({products.filter(p => Number(p.quantity) <= 0).length})
+            </button>
+          </div>
+
           {renderChart('bar', data.slice(0, 15).map(p => ({ Design: p.design_number, Qty: p.quantity })), 'Design', 'Qty')}
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Date</th><th>Dealer Name</th><th>Design Number</th><th>Color</th><th>Size</th><th>Category</th><th>Cost Price</th><th>Sell Price</th><th>Stock Qty</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Branch</th>
+                  <th>Dealer Name</th>
+                  <th>Design #</th>
+                  <th>Category</th>
+                  <th>Gender</th>
+                  <th>Color</th>
+                  <th>Size</th>
+                  <th>Cost Price</th>
+                  <th>Sell Price</th>
+                  <th>Stock Qty</th>
+                  <th>Stock Status</th>
+                </tr>
+              </thead>
               <tbody>
-                {data.map(p => (
-                  <tr key={p.id}>
-                    <td>{p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN') : '-'}</td>
-                    <td style={{ fontWeight: 600, color: 'var(--primary)' }}>🏢 {getDealerName(p.dealer_id, p.design_number, 'Direct')}</td>
-                    <td><strong>{p.design_number}</strong></td>
-                    <td>{p.color}</td>
-                    <td>{p.size || '-'}</td>
-                    <td><span className="badge badge-secondary">{p.category}</span></td>
-                    <td>₹{Number(p.purchase_price).toLocaleString('en-IN')}</td>
-                    <td style={{ color: 'var(--success)', fontWeight: 700 }}>₹{Number(p.selling_price).toLocaleString('en-IN')}</td>
-                    <td><span className={`badge ${p.quantity > 0 ? 'badge-green' : 'badge-red'}`}>{p.quantity} Units</span></td>
-                  </tr>
-                ))}
-                {data.length === 0 && <tr><td colSpan="9" style={{ textAlign: 'center', padding: '20px' }}>No stock records match filter</td></tr>}
+                {data.map(p => {
+                  const qty = Number(p.quantity || 0);
+                  const isOut = qty <= 0;
+                  const isLow = qty > 0 && qty <= 5;
+                  return (
+                    <tr key={p.id} style={isOut ? { backgroundColor: 'rgba(239, 68, 68, 0.04)' } : {}}>
+                      <td>{p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN') : '-'}</td>
+                      <td><span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>🏪 {p.branches?.name || 'Main Store'}</span></td>
+                      <td style={{ fontWeight: 600, color: 'var(--primary)' }}>🏢 {getDealerName(p.dealer_id, p.design_number, 'Direct', p.id)}</td>
+                      <td><strong>{p.design_number}</strong></td>
+                      <td><span className="badge badge-secondary">{p.category}</span></td>
+                      <td><span style={{ fontSize: '12px' }}>{p.gender || 'Unisex'}</span></td>
+                      <td>{p.color}</td>
+                      <td>{p.size || '-'}</td>
+                      <td>₹{Number(p.purchase_price || 0).toLocaleString('en-IN')}</td>
+                      <td style={{ color: 'var(--success)', fontWeight: 700 }}>₹{Number(p.selling_price || 0).toLocaleString('en-IN')}</td>
+                      <td>
+                        <strong style={{ color: isOut ? 'var(--danger)' : 'inherit' }}>
+                          {qty} {qty === 1 ? 'Unit' : 'Units'}
+                        </strong>
+                      </td>
+                      <td>
+                        {isOut ? (
+                          <span className="badge badge-red" style={{ fontWeight: 700, padding: '4px 8px' }}>
+                            ❌ Out of Stock
+                          </span>
+                        ) : isLow ? (
+                          <span className="badge badge-yellow" style={{ fontWeight: 600, background: '#fff3cd', color: '#856404', border: '1px solid #ffeeba', padding: '4px 8px' }}>
+                            ⚠️ Low Stock ({qty})
+                          </span>
+                        ) : (
+                          <span className="badge badge-green" style={{ fontWeight: 600, padding: '4px 8px' }}>
+                            ✅ In Stock
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {data.length === 0 && <tr><td colSpan="12" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>No stock records match the selected filter</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1319,9 +1639,24 @@ const Reports = () => {
             <h3 style={{ margin: 0, fontSize: '20px', color: 'var(--dark)' }}>{titles[currentReport]}</h3>
             <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Showing filtered real-time records</span>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-secondary" onClick={exportCSV}>⬇️ Export CSV</button>
-            <button className="btn btn-primary" onClick={() => { toast.dismiss(); window.print(); }}>🖨️ Print Report</button>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => exportReport('xlsx')}
+              style={{ backgroundColor: '#10B981', color: '#fff', borderColor: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              📊 Export Excel (.xlsx)
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => exportReport('csv')}
+              style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              📄 Export CSV
+            </button>
+            <button className="btn btn-primary" onClick={() => { toast.dismiss(); window.print(); }}>
+              🖨️ Print Report
+            </button>
           </div>
         </div>
 
