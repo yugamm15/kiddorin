@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { usePricePrivacy } from '../context/PricePrivacyContext';
+import UnlockPriceModal from './UnlockPriceModal';
 
 const Layout = () => {
   const { user, logout } = useAuth();
+  const { isPriceUnlocked, openUnlockModal, lockPrices } = usePricePrivacy();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -41,7 +44,24 @@ const Layout = () => {
         <div className="utility-left">
           {user?.role === 'superadmin' ? '🌐 SUPER ADMIN PORTAL' : `📍 ${user?.branch?.name || 'Main Store'}`}
         </div>
-        <div className="utility-right">
+        <div className="utility-right" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {isPriceUnlocked ? (
+            <button 
+              className="cost-lock-btn unlocked" 
+              onClick={lockPrices}
+              title="Buying prices are visible. Click to lock & hide."
+            >
+              🔓 Cost: Visible (Lock)
+            </button>
+          ) : (
+            <button 
+              className="cost-lock-btn locked" 
+              onClick={() => openUnlockModal()}
+              title="Buying prices are hidden. Click to enter PIN and reveal."
+            >
+              🔒 Cost: Hidden
+            </button>
+          )}
           <button className="logout-text" onClick={handleLogout}>LOGOUT</button>
         </div>
       </div>
@@ -80,6 +100,8 @@ const Layout = () => {
       <main className="main-content">
         <Outlet />
       </main>
+
+      <UnlockPriceModal />
     </div>
   );
 };

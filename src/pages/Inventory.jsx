@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { usePricePrivacy } from '../context/PricePrivacyContext';
+import MaskedPrice from '../components/MaskedPrice';
 import { db } from '../services/db';
 import toast from 'react-hot-toast';
 
 const Inventory = () => {
   const { user } = useAuth();
+  const { isPriceUnlocked, openUnlockModal } = usePricePrivacy();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchName, setSearchName] = useState('');
@@ -282,7 +285,7 @@ const Inventory = () => {
                   <td>
                     <strong>{s.quantity}</strong> {s.quantity < 5 && <span className="low-stock-badge">LOW</span>}
                   </td>
-                  <td>₹{s.purchase_price}</td>
+                  <td><MaskedPrice value={s.purchase_price} /></td>
                   <td>₹{s.selling_price}</td>
                   <td>{user?.branch?.name}</td>
                   <td>
@@ -327,8 +330,25 @@ const Inventory = () => {
             </div>
             
             <div className="form-group" style={{ marginBottom: '16px' }}>
-              <label>New Purchase Price (₹)</label>
-              <input type="number" min="0" value={restockPrice} onChange={e => setRestockPrice(e.target.value)} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label style={{ margin: 0 }}>New Purchase Price (₹)</label>
+                {!isPriceUnlocked && (
+                  <button 
+                    type="button" 
+                    onClick={() => openUnlockModal()} 
+                    style={{ background: 'none', border: 'none', color: 'var(--gold-dark)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                  >
+                    🔒 Unlock to view
+                  </button>
+                )}
+              </div>
+              <input 
+                type={isPriceUnlocked ? "number" : "password"} 
+                min="0" 
+                value={restockPrice} 
+                onChange={e => setRestockPrice(e.target.value)} 
+                placeholder={!isPriceUnlocked ? "••••••" : "e.g. 250"}
+              />
             </div>
 
             <div className="form-group" style={{ marginBottom: '24px' }}>
@@ -479,13 +499,25 @@ const Inventory = () => {
               </div>
 
               <div className="form-group">
-                <label>Purchase Price (₹)</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label style={{ margin: 0 }}>Purchase Price (₹)</label>
+                  {!isPriceUnlocked && (
+                    <button 
+                      type="button" 
+                      onClick={() => openUnlockModal()} 
+                      style={{ background: 'none', border: 'none', color: 'var(--gold-dark)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                    >
+                      🔒 Unlock
+                    </button>
+                  )}
+                </div>
                 <input 
-                  type="number" 
+                  type={isPriceUnlocked ? "number" : "password"} 
                   min="0" 
                   step="0.01" 
                   value={editForm.purchase_price} 
                   onChange={e => setEditForm({ ...editForm, purchase_price: e.target.value })} 
+                  placeholder={!isPriceUnlocked ? "••••••" : "0"}
                 />
               </div>
 

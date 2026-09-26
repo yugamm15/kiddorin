@@ -100,3 +100,21 @@ export async function hashPassword(password) {
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   return hashHex;
 }
+
+/**
+ * Cryptographically hashes a security PIN with an internal salt using SHA-256.
+ * Ensures PINs cannot be extracted, guessed, or searched in plain text.
+ *
+ * @param {string} pin - Raw PIN
+ * @returns {Promise<string>} Hexadecimal salted SHA-256 hash
+ */
+export async function hashPin(pin) {
+  if (!pin || typeof pin !== 'string') return '';
+  const salted = 'kiddorin_sec_pin_2026_kd_' + String(pin).trim();
+  const msgBuffer = new TextEncoder().encode(salted);
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex;
+}
+

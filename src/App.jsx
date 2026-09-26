@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { PricePrivacyProvider } from './context/PricePrivacyContext';
 import { Toaster } from 'react-hot-toast';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -54,23 +55,25 @@ const AppRoutes = () => {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <AppRoutes />
-        <Toaster 
-          position="bottom-right"
-          toastOptions={{
-            style: {
-              background: '#FFFFFF',
-              color: '#000000',
-              fontFamily: 'Montserrat, sans-serif',
-              fontSize: '12px',
-              borderRadius: '2px',
-              border: '1px solid #C5A059',
-              boxShadow: '0 10px 30px rgba(0, 0, 0, 0.05)'
-            },
-          }}
-        />
-      </Router>
+      <PricePrivacyProvider>
+        <Router>
+          <AppRoutes />
+          <Toaster 
+            position="bottom-right"
+            toastOptions={{
+              style: {
+                background: '#FFFFFF',
+                color: '#000000',
+                fontFamily: 'Montserrat, sans-serif',
+                fontSize: '12px',
+                borderRadius: '2px',
+                border: '1px solid #C5A059',
+                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.05)'
+              },
+            }}
+          />
+        </Router>
+      </PricePrivacyProvider>
     </AuthProvider>
   );
 }

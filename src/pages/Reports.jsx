@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { usePricePrivacy } from '../context/PricePrivacyContext';
+import MaskedPrice from '../components/MaskedPrice';
 import { supabase } from '../services/supabaseClient';
 import { db } from '../services/db';
 import toast from 'react-hot-toast';
@@ -13,6 +15,7 @@ const COLORS = ['#C5A059', '#1E4620', '#003366', '#8B0000', '#CC5500', '#666666'
 
 const Reports = () => {
   const { user } = useAuth();
+  const { isPriceUnlocked, openUnlockModal } = usePricePrivacy();
   const [currentReport, setCurrentReport] = useState('stock');
 
   // Data States
@@ -30,7 +33,7 @@ const Reports = () => {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [selectedBranch, setSelectedBranch] = useState('all');
-  const [stockStatusFilter, setStockStatusFilter] = useState('all'); // 'all', 'in_stock', 'low_stock', 'out_of_stock'
+  const [stockStatusFilter, setStockStatusFilter] = useState('all');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -353,7 +356,7 @@ const Reports = () => {
           p.gender || 'Unisex',
           p.color || '-',
           p.size || '-',
-          Number(p.purchase_price || 0),
+          isPriceUnlocked ? Number(p.purchase_price || 0) : '*** HIDDEN ***',
           Number(p.selling_price || 0),
           qty,
           status
@@ -373,11 +376,11 @@ const Reports = () => {
           item.customer,
           item.contact,
           item.qty,
-          item.cost,
+          isPriceUnlocked ? item.cost : '*** HIDDEN ***',
           item.grossPrice,
           item.discountShare,
           item.salePrice,
-          item.profit,
+          isPriceUnlocked ? item.profit : '*** HIDDEN ***',
           item.paymentMethod
         ]);
       });
@@ -414,13 +417,27 @@ const Reports = () => {
       sheetName = 'Purchases';
       headers = ["Purchase Date", "Dealer Name", "Design Number", "Category", "Quantity Bought", "Purchase Price (₹)", "Total Cost (₹)"];
       getFilteredPurchases().forEach(p => {
-        dataRows.push([p.dateStr, p.dealer, p.design, p.category, p.qty, p.price, p.total]);
+        dataRows.push([
+          p.dateStr,
+          p.dealer,
+          p.design,
+          p.category,
+          p.qty,
+          isPriceUnlocked ? p.price : '*** HIDDEN ***',
+          isPriceUnlocked ? p.total : '*** HIDDEN ***'
+        ]);
       });
     } else if (currentReport === 'profit') {
       sheetName = 'Profit and Loss';
       headers = ["Date", "Sales Revenue (₹)", "Cost of Goods Sold (₹)", "Shop Expenses (₹)", "Net Profit / Loss (₹)"];
       getFilteredProfitLoss().forEach(pl => {
-        dataRows.push([pl.date, pl.revenue, pl.cogs, pl.expenses, pl.net]);
+        dataRows.push([
+          pl.date,
+          pl.revenue,
+          isPriceUnlocked ? pl.cogs : '*** HIDDEN ***',
+          pl.expenses,
+          isPriceUnlocked ? pl.net : '*** HIDDEN ***'
+        ]);
       });
     } else if (currentReport === 'product') {
       sheetName = 'Product Movement';
@@ -848,6 +865,9 @@ const Reports = () => {
 
     expenses.forEach(e => {
       if (!filterByBranchAndDate(e.expense_date || e.created_at, e.branch_id)) return;
+      const cat = (e.category || '').toLowerCase();
+      // Skip owner cash float in/out since they are drawer float movements, not business operational expenses
+      if (cat.includes('home') || cat.includes('float')) return;
       const d = new Date(e.expense_date || e.created_at).toLocaleDateString('en-IN');
       if (!dateMap[d]) dateMap[d] = { date: d, revenue: 0, cogs: 0, expenses: 0 };
       dateMap[d].expenses += Number(e.amount);
@@ -965,28 +985,23 @@ const Reports = () => {
         descParts.push(`Exch: ${exchangedProd.category || 'Item'} (${exchangedProd.size || ''})`);
       }
       const desc = descParts.join(' | ') || 'Return/Exchange';
-      const party = `${ex.customer_name || 'Walk-in'} (${ex.customer_phone || '-'}) - ${desc}`;
+      const customer = ex.customer_phone ? `${ex.customer_name || 'Customer'} (${ex.customer_phone})` : (ex.customer_name || 'Customer');
+      const party = `${customer} - ${desc}`;
 
-      if (matchSearch([ex.id, ex.customer_name, ex.customer_phone, 'Return', 'Exchange', returnedProd.category, exchangedProd.category])) {
-        const netAmt = Number(ex.net_amount || 0);
-        const discount = Number(ex.discount || 0);
+      const netAmt = Number(ex.net_amount || 0);
+      const discount = Number(ex.discount_amount || 0);
+      const grossAmt = Math.abs(netAmt) + discount;
 
-        let mode = 'Even Exchange';
-        if (netAmt > 0) {
-          mode = ex.payment_method ? `Paid: ${ex.payment_method}` : 'Paid Extra';
-        } else if (netAmt < 0) {
-          mode = ex.payment_method || 'Store Credit';
-        }
-
+      if (matchSearch([ex.bill_number, ex.customer_name, ex.customer_phone, ex.action_type, 'Exchange', 'Return', returnedProd.category, exchangedProd.category])) {
         list.push({
           id: `ex-${ex.id}`,
           dateStr: new Date(ex.created_at).toLocaleString('en-IN'),
           rawDate: new Date(ex.created_at),
-          type: '🔄 Return & Exchange',
-          ref: ex.id.slice(0, 8).toUpperCase(),
+          type: ex.action_type === 'exchange' ? '🔄 Exchange' : '↩️ Return',
+          ref: ex.bill_number || `EX-#${ex.id}`,
           party,
-          mode,
-          grossAmount: Math.abs(netAmt) + discount,
+          mode: ex.payment_mode || (netAmt < 0 ? 'Store Credit / Refund' : 'Cash/UPI'),
+          grossAmount: grossAmt,
           discount,
           amount: Math.abs(netAmt),
           isPositive: netAmt >= 0
@@ -996,19 +1011,23 @@ const Reports = () => {
 
     expenses.forEach(e => {
       if (!filterByBranchAndDate(e.expense_date || e.created_at, e.branch_id)) return;
-      if (matchSearch([e.category, e.description, 'Expense'])) {
+      const cat = e.category || '';
+      const isFloatIn = cat === 'Cash In (Home Float)' || cat === 'Cash In (From Home)';
+      const isFloatOut = cat === 'Cash Out (Return to Home)' || cat === 'Cash Out (Home Return)';
+
+      if (matchSearch([e.category, e.description, 'Expense', 'Float', 'Cash In', 'Cash Out'])) {
         list.push({
           id: `exp-${e.id}`,
           dateStr: new Date(e.expense_date || e.created_at).toLocaleString('en-IN'),
           rawDate: new Date(e.expense_date || e.created_at),
-          type: '💸 Shop Expense',
+          type: isFloatIn ? '🏠 Cash In (Home Float)' : (isFloatOut ? '🏠 Cash Out (Return to Home)' : '💸 Shop Expense'),
           ref: e.category,
-          party: e.description,
-          mode: e.payment_method || 'Cash',
+          party: e.description || (isFloatIn ? 'Added from home to drawer' : isFloatOut ? 'Returned drawer cash to home' : 'Shop expense'),
+          mode: isFloatIn || isFloatOut ? '💵 Drawer Cash' : (e.payment_method || 'Cash'),
           grossAmount: Number(e.amount),
           discount: 0,
           amount: Number(e.amount),
-          isPositive: false
+          isPositive: isFloatIn
         });
       }
     });
@@ -1095,7 +1114,9 @@ const Reports = () => {
             </div>
             <div className="stat-card">
               <div className="label">Total Purchase Valuation</div>
-              <div className="value" style={{ color: 'var(--dark)' }}>₹{totalCostValue.toLocaleString('en-IN')}</div>
+              <div className="value" style={{ color: 'var(--dark)' }}>
+                <MaskedPrice value={totalCostValue} />
+              </div>
             </div>
             <div className="stat-card">
               <div className="label">Total Retail Valuation</div>
@@ -1170,7 +1191,7 @@ const Reports = () => {
                       <td><span style={{ fontSize: '12px' }}>{p.gender || 'Unisex'}</span></td>
                       <td>{p.color}</td>
                       <td>{p.size || '-'}</td>
-                      <td>₹{Number(p.purchase_price || 0).toLocaleString('en-IN')}</td>
+                      <td><MaskedPrice value={Number(p.purchase_price || 0)} /></td>
                       <td style={{ color: 'var(--success)', fontWeight: 700 }}>₹{Number(p.selling_price || 0).toLocaleString('en-IN')}</td>
                       <td>
                         <strong style={{ color: isOut ? 'var(--danger)' : 'inherit' }}>
@@ -1217,7 +1238,7 @@ const Reports = () => {
             <div className="stat-card"><div className="label">Gross Sale Value</div><div className="value">₹{totalGross.toLocaleString('en-IN')}</div></div>
             <div className="stat-card"><div className="label">Total Discount Given</div><div className="value" style={{ color: 'var(--danger)' }}>- ₹{totalDiscount.toLocaleString('en-IN')}</div></div>
             <div className="stat-card"><div className="label">Net Sales Revenue</div><div className="value">₹{totalRev.toLocaleString('en-IN')}</div></div>
-            <div className="stat-card"><div className="label">Total Net Profit</div><div className="value" style={{ color: 'var(--success)' }}>₹{totalProfit.toLocaleString('en-IN')}</div></div>
+            <div className="stat-card"><div className="label">Total Net Profit</div><div className="value" style={{ color: 'var(--success)' }}><MaskedPrice value={totalProfit} /></div></div>
           </div>
           <div className="table-wrap">
             <table>
@@ -1251,13 +1272,15 @@ const Reports = () => {
                       <td><strong>{item.design}</strong></td>
                       <td>{item.size}</td>
                       <td style={{ fontWeight: 700, color: item.qty < 0 ? 'var(--danger)' : 'inherit' }}>{item.qty}</td>
-                      <td style={{ color: item.cost < 0 ? 'var(--danger)' : 'inherit' }}>{fmt(item.cost)}</td>
+                      <td style={{ color: item.cost < 0 ? 'var(--danger)' : 'inherit' }}><MaskedPrice value={item.cost} formatter={fmt} prefix="" /></td>
                       <td style={{ color: item.grossPrice < 0 ? 'var(--danger)' : 'inherit' }}>{fmt(item.grossPrice)}</td>
                       <td style={{ color: item.discountShare !== 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 600 }}>
                         {item.discountShare !== 0 ? fmt(item.discountShare) : '—'}
                       </td>
                       <td style={{ fontWeight: 700, color: item.salePrice < 0 ? 'var(--danger)' : 'inherit' }}>{fmt(item.salePrice)}</td>
-                      <td style={{ color: item.profit >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 700 }}>{fmt(item.profit)}</td>
+                      <td style={{ color: item.profit >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 700 }}>
+                        <MaskedPrice value={item.profit} formatter={fmt} prefix="" />
+                      </td>
                       <td><span className="badge badge-secondary">{item.paymentMethod}</span></td>
                     </tr>
                   );
@@ -1426,7 +1449,7 @@ const Reports = () => {
           <div className="stat-grid" style={{ marginBottom: '20px' }}>
             <div className="stat-card"><div className="label">Total Purchases Logged</div><div className="value">{data.length} Records</div></div>
             <div className="stat-card"><div className="label">Total Units Inflow</div><div className="value">{data.reduce((s, p) => s + p.qty, 0)} Units</div></div>
-            <div className="stat-card"><div className="label">Total Stock Expenditure</div><div className="value" style={{ color: 'var(--danger)' }}>₹{totalCost.toLocaleString('en-IN')}</div></div>
+            <div className="stat-card"><div className="label">Total Stock Expenditure</div><div className="value" style={{ color: 'var(--danger)' }}><MaskedPrice value={totalCost} /></div></div>
           </div>
           <div className="table-wrap">
             <table>
@@ -1439,8 +1462,8 @@ const Reports = () => {
                     <td><strong>{p.design}</strong></td>
                     <td><span className="badge badge-secondary">{p.category}</span></td>
                     <td>{p.qty} Units</td>
-                    <td>₹{p.price.toLocaleString('en-IN')}</td>
-                    <td style={{ fontWeight: 700, color: 'var(--danger)' }}>₹{p.total.toLocaleString('en-IN')}</td>
+                    <td><MaskedPrice value={p.price} /></td>
+                    <td style={{ fontWeight: 700, color: 'var(--danger)' }}><MaskedPrice value={p.total} /></td>
                   </tr>
                 ))}
                 {data.length === 0 && <tr><td colSpan="7" style={{ textAlign: 'center', padding: '20px' }}>No purchase records match filter</td></tr>}
@@ -1462,10 +1485,10 @@ const Reports = () => {
         <div>
           <div className="stat-grid" style={{ marginBottom: '20px' }}>
             <div className="stat-card"><div className="label">Total Sales Revenue</div><div className="value">₹{totalRev.toLocaleString('en-IN')}</div></div>
-            <div className="stat-card"><div className="label">COGS + Shop Expenses</div><div className="value" style={{ color: 'var(--danger)' }}>₹{(totalCogs + totalExp).toLocaleString('en-IN')}</div></div>
-            <div className="stat-card"><div className="label">True Net Profit / Loss</div><div className="value" style={{ color: netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>₹{netProfit.toLocaleString('en-IN')}</div></div>
+            <div className="stat-card"><div className="label">COGS + Shop Expenses</div><div className="value" style={{ color: 'var(--danger)' }}><MaskedPrice value={totalCogs + totalExp} /></div></div>
+            <div className="stat-card"><div className="label">True Net Profit / Loss</div><div className="value" style={{ color: netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}><MaskedPrice value={netProfit} /></div></div>
           </div>
-          {renderChart('line', data.map(d => ({ Date: d.date, Revenue: d.revenue, NetProfit: d.net })), 'Date', 'Revenue', 'NetProfit')}
+          {renderChart('line', data.map(d => ({ Date: d.date, Revenue: d.revenue, NetProfit: isPriceUnlocked ? d.net : 0 })), 'Date', 'Revenue', isPriceUnlocked ? 'NetProfit' : undefined)}
           <div className="table-wrap">
             <table>
               <thead><tr><th>Date</th><th>Sales Revenue</th><th>Cost of Goods Sold (COGS)</th><th>Shop Expenses</th><th>Net Profit / Loss</th></tr></thead>
@@ -1474,10 +1497,10 @@ const Reports = () => {
                   <tr key={idx}>
                     <td style={{ fontWeight: 600 }}>{d.date}</td>
                     <td style={{ color: 'var(--success)', fontWeight: 600 }}>₹{d.revenue.toLocaleString('en-IN')}</td>
-                    <td>₹{d.cogs.toLocaleString('en-IN')}</td>
+                    <td><MaskedPrice value={d.cogs} /></td>
                     <td style={{ color: 'var(--danger)' }}>₹{d.expenses.toLocaleString('en-IN')}</td>
                     <td style={{ fontWeight: 700, color: d.net >= 0 ? 'var(--success)' : 'var(--danger)', fontSize: '15px' }}>
-                      {d.net >= 0 ? '+ ' : ''}₹{d.net.toLocaleString('en-IN')}
+                      <MaskedPrice value={d.net} formatter={(val) => `${val >= 0 ? '+ ' : ''}₹${val.toLocaleString('en-IN')}`} prefix="" />
                     </td>
                   </tr>
                 ))}

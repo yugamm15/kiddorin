@@ -1468,3 +1468,254 @@ input[type="radio"] {
   cursor: pointer;
   transform: translateZ(0);
 }
+
+/* ==========================================================
+   BUYING PRICE PRIVACY & SHOPKEEPER SECURITY PIN STYLES
+   ========================================================== */
+
+/* Masked Price Badge */
+.price-masked-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(197, 160, 89, 0.1);
+  border: 1px dashed var(--gold, #C5A059);
+  color: var(--gold-dark, #A38042);
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  line-height: 1.2;
+  transition: all 0.2s ease !important;
+  vertical-align: middle;
+}
+
+.price-masked-badge:hover {
+  background: var(--gold, #C5A059);
+  color: #FFFFFF;
+  border-style: solid;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(197, 160, 89, 0.25);
+}
+
+.price-masked-icon {
+  font-size: 10px;
+}
+
+.price-masked-dots {
+  letter-spacing: 1.5px;
+  font-size: 11px;
+}
+
+/* Header Privacy Lock/Unlock Button */
+.cost-lock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  transition: all 0.2s ease !important;
+}
+
+.cost-lock-btn.locked {
+  background: #fff3cd;
+  color: #856404;
+  border-color: #ffeeba;
+}
+
+.cost-lock-btn.locked:hover {
+  background: #ffe8a1;
+  border-color: #ffd666;
+  transform: translateY(-1px);
+}
+
+.cost-lock-btn.unlocked {
+  background: #d4edda;
+  color: #155724;
+  border-color: #c3e6cb;
+}
+
+.cost-lock-btn.unlocked:hover {
+  background: #c3e6cb;
+  transform: translateY(-1px);
+}
+
+/* Unlock PIN Modal */
+.unlock-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.unlock-modal-card {
+  position: relative;
+  background: var(--white);
+  width: 100%;
+  max-width: 440px;
+  padding: 36px 32px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.unlock-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px;
+  line-height: 1;
+  border-radius: 50%;
+  transition: color 0.2s;
+}
+
+.unlock-modal-close:hover {
+  color: var(--dark);
+  background: var(--off-white);
+}
+
+.unlock-icon-wrap {
+  margin-bottom: 16px;
+}
+
+.unlock-icon-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--gold-light);
+  border: 1px solid var(--gold);
+  color: var(--dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin: 0 auto;
+}
+
+.unlock-modal-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--dark);
+  margin-bottom: 8px;
+}
+
+.unlock-modal-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.unlock-input-container {
+  position: relative;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.unlock-pin-input {
+  width: 100%;
+  padding: 14px 44px 14px 16px;
+  font-size: 16px;
+  font-family: inherit;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--off-white);
+  color: var(--dark);
+  text-align: center;
+  letter-spacing: 2px;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.unlock-pin-input:focus {
+  outline: none;
+  border-color: var(--gold);
+  background: var(--white);
+  box-shadow: 0 0 0 3px rgba(197, 160, 89, 0.15);
+}
+
+.unlock-show-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.unlock-show-toggle:hover {
+  opacity: 1;
+}
+
+.unlock-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--off-white);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  margin-bottom: 24px;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.unlock-btn-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.unlock-cancel-btn {
+  flex: 1;
+  padding: 12px;
+  font-size: 13px;
+}
+
+.unlock-submit-btn {
+  flex: 1.5;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}

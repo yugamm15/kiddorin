@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { usePricePrivacy } from '../context/PricePrivacyContext';
 import { db } from '../services/db';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -9,6 +10,7 @@ const DEFAULT_SIZES = ['80', '90', '100', '110', '120', '130', '140', '150', '16
 
 const Stock = () => {
   const { user } = useAuth();
+  const { isPriceUnlocked, openUnlockModal } = usePricePrivacy();
   const [success, setSuccess] = useState(false);
   const [dealers, setDealers] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
@@ -420,8 +422,26 @@ const Stock = () => {
           </div>
           
           <div className="form-group">
-            <label>Purchase Price (₹)</label>
-            <input type="number" id="s-purchase_price" placeholder="e.g. 250" min="0" value={formData.purchase_price} onChange={handleChange} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label style={{ margin: 0 }}>Purchase Price (₹)</label>
+              {!isPriceUnlocked && (
+                <button 
+                  type="button" 
+                  onClick={() => openUnlockModal()} 
+                  style={{ background: 'none', border: 'none', color: 'var(--gold-dark)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                >
+                  🔒 Unlock to view
+                </button>
+              )}
+            </div>
+            <input 
+              type={isPriceUnlocked ? "number" : "password"} 
+              id="s-purchase_price" 
+              placeholder={!isPriceUnlocked ? "••••••" : "e.g. 250"} 
+              min="0" 
+              value={formData.purchase_price} 
+              onChange={handleChange} 
+            />
           </div>
           
           <div className="form-group">

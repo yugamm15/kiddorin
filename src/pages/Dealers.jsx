@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
+import MaskedPrice from '../components/MaskedPrice';
 import toast from 'react-hot-toast';
 
 const Dealers = () => {
@@ -86,7 +87,7 @@ const Dealers = () => {
                 <div className="branch-detail">📍 {d.address || '-'}<br/>📞 {d.phone || '-'}</div>
                 <div className="branch-stats" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
                   <div className="b-stat"><div className="v">{d.total_items}</div><div className="l">Total Items Bought</div></div>
-                  <div className="b-stat"><div className="v">₹{d.total_spent.toLocaleString('en-IN')}</div><div className="l">Total Spent</div></div>
+                  <div className="b-stat"><div className="v"><MaskedPrice value={d.total_spent} /></div><div className="l">Total Spent</div></div>
                 </div>
               </div>
             ))}
