@@ -65,7 +65,7 @@ const Inventory = () => {
     setRestockProduct(product);
     setRestockPrice(product.purchase_price);
     setRestockQty('');
-    setRestockDealer('');
+    setRestockDealer(product.dealer_id || '');
   };
 
   const handleRestock = async () => {
@@ -75,6 +75,10 @@ const Inventory = () => {
     }
     const toastId = toast.loading('Adding restock to inventory... Please wait ⏳');
     try {
+      const chosenDealerId = restockDealer || restockProduct.dealer_id || null;
+      const matchedDealer = dealers.find(d => d.id === chosenDealerId);
+      const chosenDealerName = matchedDealer ? matchedDealer.name : (restockProduct.dealer_name || null);
+
       await db.addStock({
         category: restockProduct.category,
         gender: restockProduct.gender,
@@ -84,7 +88,8 @@ const Inventory = () => {
         quantity: restockQty,
         purchase_price: restockPrice,
         selling_price: restockProduct.selling_price,
-        dealer_id: restockDealer,
+        dealer_id: chosenDealerId,
+        dealer_name: chosenDealerName,
         branch_id: user.branch_id,
         date: new Date().toISOString().split('T')[0]
       });

@@ -8,50 +8,64 @@ class SupabaseDB {
   }
 
   async login(email, password) {
-    // 1. Try Authenticating with Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password,
-    });
+    const cleanIdentifier = String(email || '').trim();
+    const cleanPassword = String(password || '').trim();
 
-    if (!authError && authData?.user) {
-      // Fetch user profile and branch details
-      const { data: profile } = await supabase
-        .from('users')
-        .select('*, branches(*)')
-        .eq('id', authData.user.id)
-        .single();
-
-      if (profile) {
-        return { ...profile, branch: profile.branches };
-      }
-    }
-
-    // 2. Fallback: Check users table directly by email & hashed password OR plain password (for backwards compatibility)
-    const hashed = await hashPassword(password);
-    let { data: fallbackProfile, error: fallbackError } = await supabase
-      .from('users')
-      .select('*, branches(*)')
-      .eq('email', email)
-      .eq('password', hashed)
-      .maybeSingle();
-
-    if (!fallbackProfile) {
-      const res = await supabase
-        .from('users')
-        .select('*, branches(*)')
-        .eq('email', email)
-        .eq('password', password)
-        .maybeSingle();
-      fallbackProfile = res.data;
-      fallbackError = res.error;
-    }
-
-    if (fallbackError || !fallbackProfile) {
+    if (!cleanIdentifier || !cleanPassword) {
       throw new Error("Invalid email or password");
     }
 
-    return { ...fallbackProfile, branch: fallbackProfile.branches };
+    // 1. Try Authenticating with Supabase Auth
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: cleanIdentifier,
+        password: cleanPassword,
+      });
+
+      if (!authError && authData?.user) {
+        const { data: profile } = await supabase
+          .from('users')
+          .select('*, branches(*)')
+          .eq('id', authData.user.id)
+          .single();
+
+        if (profile) {
+          return { ...profile, branch: profile.branches };
+        }
+      }
+    } catch {
+      // Proceed to database fallback
+    }
+
+    // 2. Direct database lookup (case-insensitive on email OR username)
+    let hashed = '';
+    try {
+      hashed = await hashPassword(cleanPassword);
+    } catch {
+      hashed = '';
+    }
+
+    // Fetch user candidates matching email OR username (case-insensitive)
+    const { data: candidates, error: candError } = await supabase
+      .from('users')
+      .select('*, branches(*)')
+      .or(`email.ilike.${cleanIdentifier},username.ilike.${cleanIdentifier}`);
+
+    if (candError || !candidates || candidates.length === 0) {
+      throw new Error("Invalid email or password");
+    }
+
+    // Verify password against plain password or SHA256 hashed password
+    const matchedUser = candidates.find(u => {
+      const dbPw = String(u.password || '');
+      return dbPw === cleanPassword || (hashed && dbPw === hashed);
+    });
+
+    if (!matchedUser) {
+      throw new Error("Invalid email or password");
+    }
+
+    return { ...matchedUser, branch: matchedUser.branches };
   }
 
   async addDealer(dealerData) {
@@ -100,6 +114,14 @@ class SupabaseDB {
 
     let product_id;
 
+    // Resolve dealer name if dealer_id is provided
+    let resolvedDealerName = productData.dealer_name || null;
+    const targetDealerId = productData.dealer_id || existing?.dealer_id || null;
+    if (targetDealerId && !resolvedDealerName) {
+      const { data: d } = await supabase.from('dealers').select('name').eq('id', targetDealerId).maybeSingle();
+      if (d?.name) resolvedDealerName = d.name;
+    }
+
     if (existing) {
       // Update quantity
       const { data, error } = await supabase
@@ -108,7 +130,8 @@ class SupabaseDB {
           quantity: existing.quantity + parseInt(productData.quantity),
           purchase_price: parseFloat(productData.purchase_price),
           selling_price: parseFloat(productData.selling_price),
-          dealer_id: productData.dealer_id || existing.dealer_id || null
+          dealer_id: targetDealerId,
+          dealer_name: resolvedDealerName || existing.dealer_name || null
         })
         .eq('id', existing.id)
         .select()
@@ -162,7 +185,8 @@ class SupabaseDB {
           selling_price: parseFloat(productData.selling_price),
           quantity: parseInt(productData.quantity),
           branch_id: productData.branch_id,
-          dealer_id: productData.dealer_id || null
+          dealer_id: targetDealerId,
+          dealer_name: resolvedDealerName
         }])
         .select()
         .single();
@@ -175,7 +199,8 @@ class SupabaseDB {
       .from('purchases')
       .insert([{
         product_id: product_id,
-        dealer_id: productData.dealer_id || null,
+        dealer_id: targetDealerId,
+        dealer_name: resolvedDealerName,
         branch_id: productData.branch_id,
         quantity: parseInt(productData.quantity),
         purchase_price: parseFloat(productData.purchase_price),
@@ -364,20 +389,36 @@ class SupabaseDB {
     return newBill;
   }
 
+  async fetchAll(queryFn, pageSize = 1000) {
+    let all = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await queryFn().range(from, from + pageSize - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      all.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
+  }
+
   async getDashboardStats(branch_id = null) {
     try {
-      // 1. Fetch Products
-      let pQuery = supabase
-        .from('products')
-        .select('id, quantity')
-        .eq('is_active', true);
+      // 1. Fetch ALL Products across pages (bypasses Supabase 1,000 limit)
+      const getProductsQuery = () => {
+        let q = supabase
+          .from('products')
+          .select('id, quantity')
+          .eq('is_active', true);
 
-      if (branch_id && branch_id !== 'all') {
-        pQuery = pQuery.eq('branch_id', branch_id);
-      }
+        if (branch_id && branch_id !== 'all') {
+          q = q.eq('branch_id', branch_id);
+        }
+        return q;
+      };
 
-      const { data: prods } = await pQuery;
-      const validProds = prods || [];
+      const validProds = await this.fetchAll(getProductsQuery);
 
       // Total quantity of physical pieces in stock
       const totalStock = validProds.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0);
@@ -386,27 +427,32 @@ class SupabaseDB {
       // Low stock: items with stock > 0 and <= 5 pieces remaining
       const lowStockAlerts = validProds.filter(p => Number(p.quantity) > 0 && Number(p.quantity) <= 5).length;
 
-      // 2. Fetch Bills (Total Bills & Total Revenue)
-      let bQuery = supabase
-        .from('bills')
-        .select('id, total_amount, payment_method, created_at, branch_id');
+      // 2. Fetch ALL Bills (Total Bills & Total Revenue)
+      const getBillsQuery = () => {
+        let q = supabase
+          .from('bills')
+          .select('id, total_amount, payment_method, created_at, branch_id');
 
-      if (branch_id && branch_id !== 'all') {
-        bQuery = bQuery.eq('branch_id', branch_id);
-      }
+        if (branch_id && branch_id !== 'all') {
+          q = q.eq('branch_id', branch_id);
+        }
+        return q;
+      };
 
-      const { data: bills } = await bQuery;
-      const validBills = bills || [];
+      const validBills = await this.fetchAll(getBillsQuery);
 
       const todaySalesCount = validBills.length;
       let totalRevenue = validBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
 
       // Factor in Returns & Exchanges net amounts to total revenue
-      let exQuery = supabase.from('returns_exchanges').select('net_amount, branch_id');
-      if (branch_id && branch_id !== 'all') {
-        exQuery = exQuery.eq('branch_id', branch_id);
-      }
-      const { data: exData } = await exQuery;
+      const getExQuery = () => {
+        let q = supabase.from('returns_exchanges').select('net_amount, branch_id');
+        if (branch_id && branch_id !== 'all') {
+          q = q.eq('branch_id', branch_id);
+        }
+        return q;
+      };
+      const exData = await this.fetchAll(getExQuery);
       if (exData && exData.length > 0) {
         const netEx = exData.reduce((sum, e) => sum + Number(e.net_amount || 0), 0);
         totalRevenue += netEx;
@@ -458,12 +504,16 @@ class SupabaseDB {
     if (bErr) throw bErr;
 
     const branchesWithStats = await Promise.all(branches.map(async (branch) => {
-      const { data: prods } = await supabase.from('products').select('quantity').eq('branch_id', branch.id);
-      const stockItems = prods ? prods.reduce((sum, p) => sum + p.quantity, 0) : 0;
+      const prods = await this.fetchAll(() =>
+        supabase.from('products').select('quantity').eq('branch_id', branch.id).eq('is_active', true)
+      );
+      const stockItems = prods ? prods.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0) : 0;
 
-      const { data: bills } = await supabase.from('bills').select('total_amount').eq('branch_id', branch.id);
+      const bills = await this.fetchAll(() =>
+        supabase.from('bills').select('total_amount').eq('branch_id', branch.id)
+      );
       const totalBills = bills ? bills.length : 0;
-      const totalRevenue = bills ? bills.reduce((sum, b) => sum + Number(b.total_amount), 0) : 0;
+      const totalRevenue = bills ? bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0) : 0;
 
       // Find an admin user for this branch
       const { data: admins } = await supabase.from('users').select('email').eq('branch_id', branch.id).limit(1);

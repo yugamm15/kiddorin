@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 const Expenses = () => {
   const [expenses, setExpenses] = useState([]);
   const [bills, setBills] = useState([]);
+  const [exchanges, setExchanges] = useState([]);
   const [branches, setBranches] = useState([]);
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('all');
   const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]); // Default today
@@ -51,14 +52,20 @@ const Expenses = () => {
       if (selectedBranchFilter !== 'all') {
         billsQuery = billsQuery.eq('branch_id', selectedBranchFilter);
       }
-      const [branchesData, expensesData, billsRes] = await Promise.all([
+      let exQuery = supabase.from('returns_exchanges').select('net_amount, discount, payment_method, created_at, branch_id');
+      if (selectedBranchFilter !== 'all') {
+        exQuery = exQuery.eq('branch_id', selectedBranchFilter);
+      }
+      const [branchesData, expensesData, billsRes, exRes] = await Promise.all([
         db.getBranchesWithStats(),
         db.getExpenses(selectedBranchFilter),
-        billsQuery
+        billsQuery,
+        exQuery
       ]);
       setBranches(branchesData || []);
       setExpenses(expensesData || []);
       setBills(billsRes?.data || []);
+      setExchanges(exRes?.data || []);
       
       if (branchesData && branchesData.length > 0) {
         if (!formData.branch_id) setFormData(prev => ({ ...prev, branch_id: branchesData[0].id }));
@@ -195,8 +202,9 @@ const Expenses = () => {
   };
 
   // Filter by selected date range
-  const filteredRecords = expenses.filter(e => isDateInRange(e.expense_date));
+  const filteredRecords = expenses.filter(e => isDateInRange(e.expense_date || e.created_at));
   const filteredBills = bills.filter(b => isDateInRange(b.created_at));
+  const filteredExchanges = exchanges.filter(ex => isDateInRange(ex.created_at));
 
   // Categorize records: Float vs Operational Expenses
   const isFloatIn = (e) => e.category === 'Cash In (Home Float)' || e.category === 'Cash In (From Home)';
@@ -236,16 +244,42 @@ const Expenses = () => {
       }
       cashSales += sc;
       upiSales += su;
+    } else if (pm.includes('store credit') || pm.includes('credit note')) {
+      // Store credit voucher redemption; no cash/upi added
     } else {
       cashSales += Number(b.total_amount || 0);
     }
   });
+
+  // Calculate Exchange Cash & UPI Inflow / Refunds
+  let exchangeCashIn = 0;
+  let exchangeUpiIn = 0;
+  let exchangeCashRefund = 0;
+  filteredExchanges.forEach(ex => {
+    const net = Number(ex.net_amount || 0);
+    const discount = Number(ex.discount || 0);
+    const actualNet = net - (net > 0 ? discount : 0);
+    const pm = (ex.payment_method || '').toLowerCase();
+    if (actualNet > 0) {
+      if (pm.includes('cash')) exchangeCashIn += actualNet;
+      else if (pm.includes('upi') || pm.includes('gpay')) exchangeUpiIn += actualNet;
+      else if (pm.includes('split')) {
+        exchangeCashIn += actualNet / 2;
+        exchangeUpiIn += actualNet / 2;
+      } else {
+        exchangeCashIn += actualNet;
+      }
+    } else if (actualNet < 0 && (pm.includes('cash refund') || pm.includes('cash_refund'))) {
+      exchangeCashRefund += Math.abs(actualNet);
+    }
+  });
+
   const totalSales = cashSales + upiSales;
 
   // Accurate Net Drawer Cash Balance:
-  // Net Drawer Cash = Sales Cash + Home Cash In - Home Cash Out - Cash Expenses Paid
-  const netCashInDrawer = cashSales + homeCashIn - homeCashOut - cashExpenseOutflow;
-  const netUpiInBank = upiSales - upiExpenseOutflow;
+  // Net Drawer Cash = Sales Cash + Exchange Cash + Home Cash In - Home Cash Out - Cash Expenses Paid - Cash Refunds
+  const netCashInDrawer = (cashSales + exchangeCashIn + homeCashIn) - (cashExpenseOutflow + homeCashOut + exchangeCashRefund);
+  const netUpiInBank = (upiSales + exchangeUpiIn) - upiExpenseOutflow;
   const totalNetBalance = netCashInDrawer + netUpiInBank;
 
   // Display Table list according to active tab
@@ -414,12 +448,14 @@ const Expenses = () => {
               <span style={{ fontSize: '24px' }}>💵</span>
             </div>
             
-            {/* Detailed 4-way Drawer Breakdown */}
+            {/* Detailed Drawer Breakdown */}
             <div style={{ fontSize: '11px', color: '#374151', marginTop: '14px', paddingTop: '10px', borderTop: '1px solid #DCFCE7', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
               <div>Sales Cash: <strong style={{ color: '#15803D' }}>+₹{cashSales.toLocaleString('en-IN')}</strong></div>
               <div>Added from Home: <strong style={{ color: '#059669' }}>+₹{homeCashIn.toLocaleString('en-IN')}</strong></div>
               <div>Returned to Home: <strong style={{ color: '#D97706' }}>-₹{homeCashOut.toLocaleString('en-IN')}</strong></div>
               <div>Cash Expenses: <strong style={{ color: '#DC2626' }}>-₹{cashExpenseOutflow.toLocaleString('en-IN')}</strong></div>
+              {exchangeCashIn > 0 && <div>Exchange Cash: <strong style={{ color: '#15803D' }}>+₹{exchangeCashIn.toLocaleString('en-IN')}</strong></div>}
+              {exchangeCashRefund > 0 && <div>Cash Refunds: <strong style={{ color: '#DC2626' }}>-₹{exchangeCashRefund.toLocaleString('en-IN')}</strong></div>}
             </div>
           </div>
 

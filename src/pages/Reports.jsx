@@ -179,25 +179,32 @@ const Reports = () => {
         }
       });
 
-      // Link dealer_id from purchases to products if product.dealer_id is missing
+      // Link dealer_id and dealer_name from purchases to products if missing
       const prodDealerMap = {};
+      const prodDealerNameMap = {};
       purData.forEach(pur => {
         if (pur.product_id && pur.dealer_id && !prodDealerMap[pur.product_id]) {
           prodDealerMap[pur.product_id] = pur.dealer_id;
+        }
+        if (pur.product_id && pur.dealer_name && !prodDealerNameMap[pur.product_id]) {
+          prodDealerNameMap[pur.product_id] = pur.dealer_name;
         }
       });
       allProducts.forEach(p => {
         if (!p.dealer_id && prodDealerMap[p.id]) {
           p.dealer_id = prodDealerMap[p.id];
         }
+        if (!p.dealer_name && prodDealerNameMap[p.id]) {
+          p.dealer_name = prodDealerNameMap[p.id];
+        }
       });
 
       setBills(bData || []);
       setProducts(allProducts);
-      setDealers(dRes.data || []);
+      setDealers(Array.isArray(dRes) ? dRes : (dRes?.data || []));
       setPurchases(purData || []);
       setExpenses(expRes || []);
-      setBranches(brRes.data || []);
+      setBranches(Array.isArray(brRes) ? brRes : (brRes?.data || []));
       setExchanges(fetchedExchanges);
       setCustomerCredits(credData || []);
     } catch (err) {
@@ -221,26 +228,43 @@ const Reports = () => {
     if (p.product_id && !purchaseMap[p.product_id]) purchaseMap[p.product_id] = p;
   });
 
-  const getDealerName = (dealerId, designNumber, fallback = 'Direct', productId = null) => {
-    // 1. Direct ID match from dealerMap
+  const productLookupMap = {};
+  products.forEach(p => {
+    if (p.id) productLookupMap[p.id] = p;
+  });
+
+  const getDealerName = (dealerId, designNumber, fallback = 'Direct', productId = null, directName = null) => {
+    // 0. Direct Name from product / purchase record
+    if (directName && directName !== 'Direct / Unknown' && directName !== 'Unknown') return directName;
+
+    // 1. Direct product lookup
+    if (productId && productLookupMap[productId]?.dealer_name) {
+      const pName = productLookupMap[productId].dealer_name;
+      if (pName && pName !== 'Direct / Unknown' && pName !== 'Unknown') return pName;
+    }
+
+    // 2. Direct ID match from dealerMap
     if (dealerId && dealerMap[dealerId]) return dealerMap[dealerId];
 
-    // 2. Lookup via purchaseMap by productId
+    // 3. Lookup via purchaseMap by productId
+    if (productId && purchaseMap[productId]?.dealer_name) {
+      return purchaseMap[productId].dealer_name;
+    }
     if (productId && purchaseMap[productId]?.dealer_id && dealerMap[purchaseMap[productId].dealer_id]) {
       return dealerMap[purchaseMap[productId].dealer_id];
     }
 
-    // 3. Lookup via any purchase linked to this product ID
+    // 4. Lookup via any purchase linked to this product ID
     if (productId) {
-      const matchPur = purchases.find(pur => pur.product_id === productId && pur.dealer_id && dealerMap[pur.dealer_id]);
-      if (matchPur) return dealerMap[matchPur.dealer_id];
+      const matchPur = purchases.find(pur => pur.product_id === productId && ((pur.dealer_name && pur.dealer_name !== 'Direct / Unknown') || (pur.dealer_id && dealerMap[pur.dealer_id])));
+      if (matchPur) return matchPur.dealer_name || dealerMap[matchPur.dealer_id];
     }
 
     if (!designNumber) return fallback;
 
     const cleanDn = designNumber.trim().toUpperCase();
 
-    // 4. Exact match against verified brand / dealer design prefix abbreviations
+    // 5. Exact match against verified brand / dealer design prefix abbreviations
     const customPrefixes = [
       { prefix: 'BEI', name: 'Beiya' },
       { prefix: 'BY', name: 'Beiya' },
@@ -254,6 +278,7 @@ const Reports = () => {
       { prefix: 'MI', name: 'MIER' },
       { prefix: 'PNG', name: 'PNG' },
       { prefix: 'LCT', name: 'LCT' },
+      { prefix: 'LC', name: 'LCT' },
       { prefix: 'YDY', name: 'YI DO YING' },
       { prefix: 'YI', name: 'YI DO YING' },
       { prefix: 'SYY', name: 'SHAUKNG YAN YANG' },
@@ -262,12 +287,28 @@ const Reports = () => {
       { prefix: 'BK', name: 'BABY K' },
       { prefix: 'TK', name: 'Two Kids' },
       { prefix: 'VK', name: 'VK' },
+      { prefix: 'DW', name: 'Dongfang' },
+      { prefix: 'DF', name: 'Dongfang' },
+      { prefix: 'XS', name: 'Xintong' },
+      { prefix: 'XT', name: 'Xintong' },
+      { prefix: 'CS', name: 'Changsheng' },
+      { prefix: 'MM', name: 'Miss Mini' },
+      { prefix: 'D-', name: 'Dadida - Shijing' },
+      { prefix: 'DD-', name: 'Dadida - Shijing' },
       { prefix: 'D', name: 'Dadida - Shijing' },
-      { prefix: 'DD', name: 'Dadida - Shijing' },
       { prefix: 'JT', name: 'Jthui - Shijing' },
       { prefix: 'JTH', name: 'Jthui - Shijing' },
+      { prefix: 'MKR', name: 'MK Kids - Shijing' },
       { prefix: 'MK', name: 'MK Kids - Shijing' },
-      { prefix: 'JM', name: 'Jiami - Shijing' }
+      { prefix: 'JM', name: 'Jiami - Shijing' },
+      { prefix: 'JIA', name: 'Jiami - Shijing' },
+      { prefix: 'BB', name: 'Bele Boutique' },
+      { prefix: 'TB', name: 'Tao Bao' },
+      { prefix: 'LK', name: 'LILA kids' },
+      { prefix: 'SNM', name: 'Shao Nian Meng' },
+      { prefix: 'GL', name: 'Good Luck' },
+      { prefix: 'M-', name: 'Miyo' },
+      { prefix: 'MY', name: 'Miyo' }
     ];
     customPrefixes.sort((a, b) => b.prefix.length - a.prefix.length);
 
@@ -304,11 +345,22 @@ const Reports = () => {
     return fallback;
   };
 
+  // Local Date Helper (matches YYYY-MM-DD input filters in Indian Standard Time)
+  const getLocalDateStr = (itemDateStr) => {
+    if (!itemDateStr) return '';
+    const d = new Date(itemDateStr);
+    if (isNaN(d.getTime())) return '';
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Filter Helper
   const filterByBranchAndDate = (itemDateStr, branchId) => {
     if (selectedBranch !== 'all' && branchId !== selectedBranch) return false;
     if (!itemDateStr) return true;
-    const dateOnly = new Date(itemDateStr).toISOString().split('T')[0];
+    const dateOnly = getLocalDateStr(itemDateStr);
     if (fromDate && dateOnly < fromDate) return false;
     if (toDate && dateOnly > toDate) return false;
     return true;
@@ -350,7 +402,7 @@ const Reports = () => {
         dataRows.push([
           p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN') : '-',
           p.branches?.name || 'Main Store',
-          getDealerName(p.dealer_id, p.design_number, 'Direct / Unknown', p.id),
+          getDealerName(p.dealer_id, p.design_number, 'Direct', p.id, p.dealer_name),
           p.design_number || '-',
           p.category || '-',
           p.gender || 'Unisex',
@@ -402,11 +454,23 @@ const Reports = () => {
         ]);
       });
     } else if (currentReport === 'payment') {
-      sheetName = 'Payment Breakdown';
-      headers = ["Payment Mode", "Total Bills Handled", "Total Revenue (₹)"];
-      getFilteredPaymentStats().forEach(s => {
-        dataRows.push([s.mode, s.count, s.revenue]);
-      });
+      sheetName = 'Cash Drawer & Payments';
+      headers = ["Category / Component", "Details / Count", "Amount (₹)"];
+      const pData = getFilteredPaymentStats();
+      dataRows.push(["Net Cash in Drawer (Shop Box)", "Physical cash in counter box", pData.netCashInDrawer]);
+      dataRows.push(["Net Bank UPI", "Direct to bank account balance", pData.netUpiInBank]);
+      dataRows.push(["Total Liquid Balance", "Drawer Cash + Bank UPI combined", pData.netCashInDrawer + pData.netUpiInBank]);
+      dataRows.push(["---", "---", "---"]);
+      dataRows.push(["POS Cash Sales", `${pData.cashCount} cash sales`, pData.salesCash]);
+      dataRows.push(["POS UPI Sales", `${pData.upiCount} UPI sales`, pData.salesUpi]);
+      dataRows.push(["Exchange Cash Inflow", "Extra paid by customer in cash", pData.exchangeCashIn]);
+      dataRows.push(["Exchange UPI Inflow", "Extra paid by customer via UPI", pData.exchangeUpiIn]);
+      dataRows.push(["Cash Added from Home (Float In)", "Counter Float Inflow", pData.floatIn]);
+      dataRows.push(["Cash Returned to Home (Float Out)", "Counter Float Outflow", -pData.floatOut]);
+      dataRows.push(["Cash Expenses Paid", "Shop expenses paid in cash", -pData.cashExpenses]);
+      dataRows.push(["UPI Expenses Paid", "Shop expenses paid via UPI", -pData.upiExpenses]);
+      dataRows.push(["Cash Refunds Paid", "Direct cash refunds given", -pData.exchangeCashRefund]);
+      dataRows.push(["Store Credit Notes Issued", "Credit vouchers issued to customers", pData.creditNotesIssued]);
     } else if (currentReport === 'branch') {
       sheetName = 'Branch Performance';
       headers = ["Branch Name", "Total Revenue (₹)", "Total Bills Handled", "Current Stock Items (Units)"];
@@ -495,7 +559,7 @@ const Reports = () => {
       if (stockStatusFilter === 'out_of_stock' && qty > 0) return false;
       if (stockStatusFilter === 'low_stock' && (qty <= 0 || qty > 5)) return false;
 
-      const dealerName = getDealerName(p.dealer_id, p.design_number, 'Direct', p.id);
+      const dealerName = getDealerName(p.dealer_id, p.design_number, 'Direct', p.id, p.dealer_name);
       const statusText = qty <= 0 ? 'Out of Stock' : (qty <= 5 ? 'Low Stock' : 'In Stock');
       return matchSearch([p.design_number, p.color, p.size, p.gender, p.category, dealerName, p.branches?.name, statusText]);
     });
@@ -506,6 +570,10 @@ const Reports = () => {
       (s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0
     );
     const paid = Number(bill.total_amount || 0);
+    // If the bill was fully settled using an existing Store Credit voucher, it was not discounted
+    if ((bill.payment_method || '').toLowerCase().includes('store credit') && paid === 0) {
+      return 0;
+    }
     const discount = itemsSum - paid;
     return discount > 0 ? Math.round(discount) : 0;
   };
@@ -522,7 +590,7 @@ const Reports = () => {
 
       (bill.bill_items || []).forEach(bi => {
         const prod = bi.products || {};
-        const dealerName = getDealerName(prod.dealer_id, prod.design_number, 'Direct / Unknown', prod.id);
+        const dealerName = getDealerName(prod.dealer_id, prod.design_number, 'Direct', prod.id, prod.dealer_name);
         const buyDate = prod.created_at ? new Date(prod.created_at).toLocaleDateString('en-IN') : '-';
         const saleDate = bill.created_at ? new Date(bill.created_at).toLocaleDateString('en-IN') : '-';
         const cost = Number(prod.purchase_price || 0) * bi.quantity;
@@ -652,22 +720,26 @@ const Reports = () => {
     );
   };
 
-  // 3. Payment Report
+  // 3. Payment Report & Real-time Cash Drawer Reconciliation
   const getFilteredPaymentStats = () => {
-    let cashRev = 0, upiRev = 0;
-    let cashCount = 0, upiCount = 0;
+    let salesCash = 0;
+    let salesUpi = 0;
+    let cashCount = 0;
+    let upiCount = 0;
 
     bills.forEach(b => {
       if (!filterByBranchAndDate(b.created_at, b.branch_id)) return;
       if (!matchSearch([b.customer_name, b.customer_phone, b.id])) return;
 
       const pm = (b.payment_method || '').toLowerCase();
+      const tot = Number(b.total_amount || 0);
+
       if (pm === 'cash') {
-        cashRev += Number(b.total_amount);
-        cashCount++;
+        salesCash += tot;
+        if (tot > 0) cashCount++;
       } else if (pm === 'upi') {
-        upiRev += Number(b.total_amount);
-        upiCount++;
+        salesUpi += tot;
+        if (tot > 0) upiCount++;
       } else if (pm.includes('split') || (Number(b.split_cash || 0) > 0 || Number(b.split_upi || 0) > 0)) {
         let sc = Number(b.split_cash || 0);
         let su = Number(b.split_upi || 0);
@@ -678,97 +750,124 @@ const Reports = () => {
             sc = parseFloat(match[1]) || 0;
             su = parseFloat(match[2]) || 0;
           } else {
-            const tot = Number(b.total_amount || 0);
             sc = tot / 2;
             su = tot / 2;
           }
         }
-
-        cashRev += sc;
-        upiRev += su;
+        salesCash += sc;
+        salesUpi += su;
         if (sc > 0) cashCount++;
         if (su > 0) upiCount++;
+      } else if (pm.includes('store credit') || pm.includes('credit note')) {
+        // Customer paid with store credit voucher; no cash or upi added to drawer
       } else {
-        // Fallback for store credit payment or legacy bills
-        cashRev += Number(b.total_amount);
-        cashCount++;
+        salesCash += tot;
+        if (tot > 0) cashCount++;
       }
     });
+
+    let exchangeCashIn = 0;
+    let exchangeUpiIn = 0;
+    let exchangeCashRefund = 0;
+    let creditNotesIssued = 0;
 
     exchanges.forEach(ex => {
       if (!filterByBranchAndDate(ex.created_at, ex.branch_id)) return;
       if (!matchSearch([ex.customer_name, ex.customer_phone, ex.id])) return;
 
       const net = Number(ex.net_amount || 0);
+      const discount = Number(ex.discount || ex.discount_amount || 0);
+      const actualNet = net - (net > 0 ? discount : 0);
       const pm = (ex.payment_method || '').toLowerCase();
 
-      if (net > 0) {
-        // Customer paid extra
+      if (actualNet > 0) {
+        // Customer paid extra difference
         if (pm.includes('cash')) {
-          cashRev += net;
+          exchangeCashIn += actualNet;
           cashCount++;
         } else if (pm.includes('upi') || pm.includes('gpay')) {
-          upiRev += net;
+          exchangeUpiIn += actualNet;
           upiCount++;
         } else if (pm.includes('split')) {
           const match = pm.match(/Cash:\s*₹?([\d.]+).*?(?:GPay|UPI):\s*₹?([\d.]+)/i);
+          let sc = actualNet / 2;
+          let su = actualNet / 2;
           if (match) {
-            const sc = parseFloat(match[1]) || 0;
-            const su = parseFloat(match[2]) || 0;
-            cashRev += sc;
-            upiRev += su;
-            if (sc > 0) cashCount++;
-            if (su > 0) upiCount++;
-          } else {
-            cashRev += net / 2;
-            upiRev += net / 2;
-            cashCount++;
-            upiCount++;
+            sc = parseFloat(match[1]) || 0;
+            su = parseFloat(match[2]) || 0;
           }
+          exchangeCashIn += sc;
+          exchangeUpiIn += su;
+          if (sc > 0) cashCount++;
+          if (su > 0) upiCount++;
         } else {
-          // Default fallback
-          cashRev += net;
+          exchangeCashIn += actualNet;
           cashCount++;
         }
-      } else if (net < 0) {
-        // Refund / Store credit issued (negative net) - deduct from original payment mode
-        const origBill = bills.find(b => b.id === ex.original_bill_id);
-        const origPm = origBill ? (origBill.payment_method || '').toLowerCase() : '';
-        const absNet = Math.abs(net);
-
-        if (origPm === 'cash') {
-          cashRev -= absNet;
-        } else if (origPm === 'upi') {
-          upiRev -= absNet;
-        } else if (origPm.includes('split')) {
-          let sc = Number(origBill?.split_cash || 0);
-          let su = Number(origBill?.split_upi || 0);
-          if (sc === 0 && su === 0 && origPm.includes('split')) {
-            const match = origPm.match(/Cash:\s*₹?([\d.]+).*?(?:GPay|UPI):\s*₹?([\d.]+)/i);
-            if (match) {
-              sc = parseFloat(match[1]) || 0;
-              su = parseFloat(match[2]) || 0;
-            }
-          }
-          const totalSplit = sc + su;
-          if (totalSplit > 0) {
-            cashRev -= absNet * (sc / totalSplit);
-            upiRev -= absNet * (su / totalSplit);
-          } else {
-            cashRev -= absNet / 2;
-            upiRev -= absNet / 2;
-          }
+      } else if (actualNet < 0) {
+        if (pm.includes('cash refund') || pm.includes('cash_refund')) {
+          exchangeCashRefund += Math.abs(actualNet);
         } else {
-          // Default fallback
-          cashRev -= absNet;
+          creditNotesIssued += Math.abs(actualNet);
         }
       }
     });
 
-    return [
-      { mode: '💵 Cash', count: cashCount, revenue: cashRev },
-      { mode: '📱 UPI', count: upiCount, revenue: upiRev }
+    // Expenses & Drawer Float
+    let cashExpenses = 0;
+    let upiExpenses = 0;
+    let floatIn = 0;
+    let floatOut = 0;
+
+    expenses.forEach(e => {
+      const expDate = e.expense_date || e.created_at;
+      if (!filterByBranchAndDate(expDate, e.branch_id)) return;
+      const cat = e.category || '';
+      const amt = Number(e.amount || 0);
+      const isFloatIn = cat === 'Cash In (Home Float)' || cat === 'Cash In (From Home)';
+      const isFloatOut = cat === 'Cash Out (Return to Home)' || cat === 'Cash Out (Home Return)';
+      const pm = (e.payment_method || 'Cash').toLowerCase();
+
+      if (isFloatIn) {
+        floatIn += amt;
+      } else if (isFloatOut) {
+        floatOut += amt;
+      } else {
+        if (pm === 'cash') {
+          cashExpenses += amt;
+        } else if (pm === 'upi') {
+          upiExpenses += amt;
+        } else {
+          cashExpenses += amt;
+        }
+      }
+    });
+
+    const netCashInDrawer = (salesCash + exchangeCashIn + floatIn) - (cashExpenses + floatOut + exchangeCashRefund);
+    const netUpiInBank = (salesUpi + exchangeUpiIn) - upiExpenses;
+
+    const modes = [
+      { mode: '💵 Cash (Sales + Exchanges)', count: cashCount, revenue: salesCash + exchangeCashIn },
+      { mode: '📱 UPI (Sales + Exchanges)', count: upiCount, revenue: salesUpi + exchangeUpiIn }
     ].filter(s => s.count > 0 || s.revenue !== 0);
+
+    return {
+      salesCash,
+      salesUpi,
+      exchangeCashIn,
+      exchangeUpiIn,
+      exchangeCashRefund,
+      creditNotesIssued,
+      cashExpenses,
+      upiExpenses,
+      floatIn,
+      floatOut,
+      netCashInDrawer,
+      netUpiInBank,
+      cashCount,
+      upiCount,
+      modes
+    };
   };
 
   // 4. Branch Wise Report
@@ -808,7 +907,7 @@ const Reports = () => {
     purchases.forEach(p => {
       if (!filterByBranchAndDate(p.date || p.created_at, p.branch_id)) return;
       const prod = products.find(prod => prod.id === p.product_id) || {};
-      const dealerName = getDealerName(p.dealer_id || prod.dealer_id, p.design_number || prod.design_number, 'Direct', prod.id || p.product_id);
+      const dealerName = getDealerName(p.dealer_id || prod.dealer_id, p.design_number || prod.design_number, 'Direct', prod.id || p.product_id, p.dealer_name || prod.dealer_name);
 
       if (matchSearch([prod.design_number, prod.category, dealerName])) {
         list.push({
@@ -832,31 +931,47 @@ const Reports = () => {
 
     bills.forEach(b => {
       if (!filterByBranchAndDate(b.created_at, b.branch_id)) return;
-      const d = new Date(b.created_at).toLocaleDateString('en-IN');
-      if (!dateMap[d]) dateMap[d] = { date: d, revenue: 0, cogs: 0, expenses: 0 };
-      dateMap[d].revenue += Number(b.total_amount);
+      const d = getLocalDateStr(b.created_at);
+      const displayDate = new Date(b.created_at).toLocaleDateString('en-IN');
+      if (!dateMap[d]) dateMap[d] = { rawDate: d, date: displayDate, revenue: 0, cogs: 0, expenses: 0 };
+
+      const itemsSum = (b.bill_items || []).reduce((s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0);
+      const billDiscount = resolveBillDiscount(b);
+      const isStoreCreditBill = (b.payment_method || '').toLowerCase().includes('store credit');
+
+      // If bill was paid via Store Credit voucher, recognize the items value so revenue isn't lost
+      const billRevenue = (isStoreCreditBill && Number(b.total_amount || 0) === 0)
+        ? Math.max(0, itemsSum - billDiscount)
+        : Number(b.total_amount || 0);
+
+      dateMap[d].revenue += billRevenue;
 
       (b.bill_items || []).forEach(bi => {
-        const prod = bi.products || {};
+        const prod = bi.products || products.find(p => p.id === bi.product_id) || {};
         dateMap[d].cogs += Number(prod.purchase_price || 0) * bi.quantity;
       });
     });
 
     exchanges.forEach(ex => {
       if (!filterByBranchAndDate(ex.created_at, ex.branch_id)) return;
-      const d = new Date(ex.created_at).toLocaleDateString('en-IN');
-      if (!dateMap[d]) dateMap[d] = { date: d, revenue: 0, cogs: 0, expenses: 0 };
+      const d = getLocalDateStr(ex.created_at);
+      const displayDate = new Date(ex.created_at).toLocaleDateString('en-IN');
+      if (!dateMap[d]) dateMap[d] = { rawDate: d, date: displayDate, revenue: 0, cogs: 0, expenses: 0 };
 
-      dateMap[d].revenue += Number(ex.net_amount || 0);
+      const netAmt = Number(ex.net_amount || 0);
+      const discount = Number(ex.discount || ex.discount_amount || 0);
+      const effectiveNet = netAmt - (netAmt > 0 ? discount : 0);
+
+      dateMap[d].revenue += effectiveNet;
 
       if (ex.returned_product_id && ex.returned_qty > 0) {
-        const returnedProd = products.find(p => p.id === ex.returned_product_id);
+        const returnedProd = ex.returned_product || products.find(p => p.id === ex.returned_product_id);
         if (returnedProd) {
           dateMap[d].cogs -= Number(returnedProd.purchase_price || 0) * ex.returned_qty;
         }
       }
       if (ex.exchanged_product_id && ex.exchanged_qty > 0) {
-        const exchangedProd = products.find(p => p.id === ex.exchanged_product_id);
+        const exchangedProd = ex.exchanged_product || products.find(p => p.id === ex.exchanged_product_id);
         if (exchangedProd) {
           dateMap[d].cogs += Number(exchangedProd.purchase_price || 0) * ex.exchanged_qty;
         }
@@ -864,19 +979,22 @@ const Reports = () => {
     });
 
     expenses.forEach(e => {
-      if (!filterByBranchAndDate(e.expense_date || e.created_at, e.branch_id)) return;
+      const expDate = e.expense_date || e.created_at;
+      if (!filterByBranchAndDate(expDate, e.branch_id)) return;
       const cat = (e.category || '').toLowerCase();
       // Skip owner cash float in/out since they are drawer float movements, not business operational expenses
       if (cat.includes('home') || cat.includes('float')) return;
-      const d = new Date(e.expense_date || e.created_at).toLocaleDateString('en-IN');
-      if (!dateMap[d]) dateMap[d] = { date: d, revenue: 0, cogs: 0, expenses: 0 };
-      dateMap[d].expenses += Number(e.amount);
+      const d = getLocalDateStr(expDate);
+      const displayDate = new Date(expDate).toLocaleDateString('en-IN');
+      if (!dateMap[d]) dateMap[d] = { rawDate: d, date: displayDate, revenue: 0, cogs: 0, expenses: 0 };
+      dateMap[d].expenses += Number(e.amount || 0);
     });
 
     return Object.values(dateMap).map(item => ({
       ...item,
       net: item.revenue - item.cogs - item.expenses
-    })).filter(pl => matchSearch([pl.date]));
+    })).filter(pl => matchSearch([pl.date]))
+      .sort((a, b) => new Date(b.rawDate) - new Date(a.rawDate));
   };
 
   // 7. Product Wise Report
@@ -1185,7 +1303,7 @@ const Reports = () => {
                     <tr key={p.id} style={isOut ? { backgroundColor: 'rgba(239, 68, 68, 0.04)' } : {}}>
                       <td>{p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN') : '-'}</td>
                       <td><span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>🏪 {p.branches?.name || 'Main Store'}</span></td>
-                      <td style={{ fontWeight: 600, color: 'var(--primary)' }}>🏢 {getDealerName(p.dealer_id, p.design_number, 'Direct', p.id)}</td>
+                      <td style={{ fontWeight: 600, color: 'var(--primary)' }}>🏢 {getDealerName(p.dealer_id, p.design_number, 'Direct', p.id, p.dealer_name)}</td>
                       <td><strong>{p.design_number}</strong></td>
                       <td><span className="badge badge-secondary">{p.category}</span></td>
                       <td><span style={{ fontSize: '12px' }}>{p.gender || 'Unisex'}</span></td>
@@ -1394,21 +1512,117 @@ const Reports = () => {
 
     if (currentReport === 'payment') {
       const data = getFilteredPaymentStats();
+      const totalLiquid = data.netCashInDrawer + data.netUpiInBank;
+
       return (
         <div>
-          {renderChart('pie', data.map(d => ({ name: d.mode, value: d.revenue })), 'name', 'value')}
+          {/* Key Liquid Balances */}
+          <div className="stat-grid" style={{ marginBottom: '20px' }}>
+            <div className="stat-card" style={{ borderLeft: '4px solid #16a34a' }}>
+              <div className="label">💵 Net Cash in Shop Box (Drawer)</div>
+              <div className="value" style={{ color: data.netCashInDrawer >= 0 ? '#15803d' : '#dc2626' }}>
+                ₹{data.netCashInDrawer.toLocaleString('en-IN')}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Expected physical cash in drawer
+              </div>
+            </div>
+
+            <div className="stat-card" style={{ borderLeft: '4px solid #0284c7' }}>
+              <div className="label">📱 Net Bank UPI Received</div>
+              <div className="value" style={{ color: '#0284c7' }}>
+                ₹{data.netUpiInBank.toLocaleString('en-IN')}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Total received in bank via QR/UPI
+              </div>
+            </div>
+
+            <div className="stat-card" style={{ borderLeft: '4px solid var(--gold)' }}>
+              <div className="label">🏦 Total Liquid Balance</div>
+              <div className="value" style={{ color: totalLiquid >= 0 ? 'var(--dark)' : '#dc2626' }}>
+                ₹{totalLiquid.toLocaleString('en-IN')}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Drawer Cash + Bank UPI combined
+              </div>
+            </div>
+
+            <div className="stat-card" style={{ borderLeft: '4px solid #d97706' }}>
+              <div className="label">💳 Customer Credit Vouchers</div>
+              <div className="value" style={{ color: '#d97706' }}>
+                ₹{data.creditNotesIssued.toLocaleString('en-IN')}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Store credit issued (not cash payout)
+              </div>
+            </div>
+          </div>
+
+          {/* Drawer Reconciliation Card */}
+          <div className="card" style={{ marginBottom: '20px', padding: '16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px' }}>
+            <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '12px', color: '#1E293B', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>🧮 Cash Box (Drawer) Step-by-Step Reconciliation</span>
+              <span style={{ fontSize: '11px', fontWeight: 500, color: '#64748B' }}>(Matches physical money counted in shop drawer)</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', fontSize: '13px' }}>
+              <div style={{ background: '#FFFFFF', padding: '12px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                <div style={{ fontWeight: 600, color: '#16A34A', marginBottom: '6px' }}>🟢 Total Cash Inflows</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span>POS Cash Sales:</span>
+                  <strong>+ ₹{data.salesCash.toLocaleString('en-IN')}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span>Exchange Cash Received:</span>
+                  <strong>+ ₹{data.exchangeCashIn.toLocaleString('en-IN')}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Cash Added from Home:</span>
+                  <strong>+ ₹{data.floatIn.toLocaleString('en-IN')}</strong>
+                </div>
+              </div>
+
+              <div style={{ background: '#FFFFFF', padding: '12px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                <div style={{ fontWeight: 600, color: '#DC2626', marginBottom: '6px' }}>🔴 Total Cash Outflows</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span>Shop Expenses Paid in Cash:</span>
+                  <strong style={{ color: '#DC2626' }}>- ₹{data.cashExpenses.toLocaleString('en-IN')}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span>Cash Taken Back Home:</span>
+                  <strong style={{ color: '#DC2626' }}>- ₹{data.floatOut.toLocaleString('en-IN')}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Direct Cash Refunds Paid:</span>
+                  <strong style={{ color: '#DC2626' }}>- ₹{data.exchangeCashRefund.toLocaleString('en-IN')}</strong>
+                </div>
+              </div>
+
+              <div style={{ background: '#ECFDF5', padding: '12px', borderRadius: '8px', border: '1px solid #A7F3D0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: '#065F46', textTransform: 'uppercase' }}>Exact Cash in Counter Drawer</div>
+                <div style={{ fontSize: '24px', fontWeight: 800, color: data.netCashInDrawer >= 0 ? '#047857' : '#DC2626', marginTop: '4px' }}>
+                  ₹{data.netCashInDrawer.toLocaleString('en-IN')}
+                </div>
+                <div style={{ fontSize: '11px', color: '#047857', marginTop: '2px' }}>
+                  Count your physical notes & coins to match this amount
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {renderChart('pie', data.modes.map(d => ({ name: d.mode, value: d.revenue })), 'name', 'value')}
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Payment Mode</th><th>Total Transactions</th><th>Total Revenue Generated</th></tr></thead>
+              <thead><tr><th>Payment Channel</th><th>Total Transactions</th><th>Total Revenue Generated</th></tr></thead>
               <tbody>
-                {data.map((d, idx) => (
+                {data.modes.map((d, idx) => (
                   <tr key={idx}>
                     <td style={{ fontSize: '15px', fontWeight: 600 }}>{d.mode}</td>
-                    <td>{d.count} Bills</td>
+                    <td>{d.count} Bills / Orders</td>
                     <td style={{ fontSize: '16px', fontWeight: 700, color: 'var(--dark)' }}>₹{d.revenue.toLocaleString('en-IN')}</td>
                   </tr>
                 ))}
-                {data.length === 0 && <tr><td colSpan="3" style={{ textAlign: 'center', padding: '20px' }}>No payment data matches filter</td></tr>}
+                {data.modes.length === 0 && <tr><td colSpan="3" style={{ textAlign: 'center', padding: '20px' }}>No payment data matches filter</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1483,12 +1697,15 @@ const Reports = () => {
 
       return (
         <div>
-          <div className="stat-grid" style={{ marginBottom: '20px' }}>
+          <div className="stat-grid" style={{ marginBottom: '16px' }}>
             <div className="stat-card"><div className="label">Total Sales Revenue</div><div className="value">₹{totalRev.toLocaleString('en-IN')}</div></div>
             <div className="stat-card"><div className="label">COGS + Shop Expenses</div><div className="value" style={{ color: 'var(--danger)' }}><MaskedPrice value={totalCogs + totalExp} /></div></div>
             <div className="stat-card"><div className="label">True Net Profit / Loss</div><div className="value" style={{ color: netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}><MaskedPrice value={netProfit} /></div></div>
           </div>
-          {renderChart('line', data.map(d => ({ Date: d.date, Revenue: d.revenue, NetProfit: isPriceUnlocked ? d.net : 0 })), 'Date', 'Revenue', isPriceUnlocked ? 'NetProfit' : undefined)}
+          <div style={{ background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: '8px', padding: '10px 14px', marginBottom: '20px', fontSize: '12px', color: '#92400E' }}>
+            💡 <strong>Note on Drawer Cash vs. Net Profit:</strong> Net Profit accounts for the wholesale purchase cost of garments (COGS) and operational expenses. It does not equal physical drawer cash because garment stock was purchased in advance and UPI sales go directly to your bank account. To reconcile physical money in your shop counter box, check the <strong>Payment Report</strong>.
+          </div>
+          {renderChart('line', [...data].reverse().map(d => ({ Date: d.date, Revenue: d.revenue, NetProfit: isPriceUnlocked ? d.net : 0 })), 'Date', 'Revenue', isPriceUnlocked ? 'NetProfit' : undefined)}
           <div className="table-wrap">
             <table>
               <thead><tr><th>Date</th><th>Sales Revenue</th><th>Cost of Goods Sold (COGS)</th><th>Shop Expenses</th><th>Net Profit / Loss</th></tr></thead>

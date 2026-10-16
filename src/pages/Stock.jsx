@@ -134,10 +134,19 @@ const Stock = () => {
 
           // Dealer lookup
           let dealer_id = formData.dealer_id || null;
+          let resolvedDealerName = null;
           const dealerName = String(cleanRow['dealer name'] || cleanRow['dealer'] || '').trim();
           if (dealerName) {
             const matchedDealer = dealers.find(d => d.name.toLowerCase() === dealerName.toLowerCase());
-            if (matchedDealer) dealer_id = matchedDealer.id;
+            if (matchedDealer) {
+              dealer_id = matchedDealer.id;
+              resolvedDealerName = matchedDealer.name;
+            } else {
+              resolvedDealerName = dealerName;
+            }
+          } else if (dealer_id) {
+            const matched = dealers.find(d => d.id === dealer_id);
+            if (matched) resolvedDealerName = matched.name;
           }
 
           // Date lookup (default to today if empty)
@@ -166,6 +175,7 @@ const Stock = () => {
               purchase_price,
               selling_price,
               dealer_id,
+              dealer_name: resolvedDealerName,
               branch_id: user.branch_id,
               date: dateStr
             });
@@ -239,6 +249,9 @@ const Stock = () => {
 
     const toastId = toast.loading('Adding items to stock... Please wait ⏳');
     try {
+      const selectedDealer = dealers.find(d => d.id === formData.dealer_id);
+      const resolvedDealerName = selectedDealer ? selectedDealer.name : null;
+
       // Create permutations of color and size
       for (const color of selectedColors) {
         for (const size of selectedSizes) {
@@ -246,6 +259,7 @@ const Stock = () => {
             ...formData,
             color,
             size,
+            dealer_name: resolvedDealerName,
             branch_id: user.branch_id
           });
         }
