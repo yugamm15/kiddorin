@@ -28,6 +28,15 @@ const Reports = () => {
   const [exchanges, setExchanges] = useState([]);
   const [customerCredits, setCustomerCredits] = useState([]);
 
+  // Edit Bill State (Owner can edit customer details, phone, payment cash flow, date; products remain locked)
+  const [editingBill, setEditingBill] = useState(null);
+  const [editCustomerName, setEditCustomerName] = useState('');
+  const [editCustomerPhone, setEditCustomerPhone] = useState('');
+  const [editPaymentMethod, setEditPaymentMethod] = useState('Cash');
+  const [editSplitCash, setEditSplitCash] = useState('');
+  const [editBillDate, setEditBillDate] = useState('');
+  const [savingBillEdit, setSavingBillEdit] = useState(false);
+
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -218,6 +227,89 @@ const Reports = () => {
   useEffect(() => {
     loadAllData();
   }, [user]);
+
+  const handleOpenEditBill = (bill) => {
+    if (!bill) return;
+    setEditingBill(bill);
+    setEditCustomerName(bill.customer_name || 'Walk-in Customer');
+    setEditCustomerPhone(bill.customer_phone || '');
+
+    const pmLower = (bill.payment_method || '').toLowerCase();
+    if (pmLower.includes('split')) {
+      setEditPaymentMethod('Split');
+      setEditSplitCash(bill.split_cash !== undefined && bill.split_cash !== null ? String(bill.split_cash) : '');
+    } else if (pmLower.includes('upi')) {
+      setEditPaymentMethod('UPI');
+      setEditSplitCash('');
+    } else {
+      setEditPaymentMethod('Cash');
+      setEditSplitCash('');
+    }
+
+    if (bill.created_at) {
+      const d = new Date(bill.created_at);
+      const offset = d.getTimezoneOffset() * 60000;
+      const localISOTime = (new Date(d.getTime() - offset)).toISOString().slice(0, 16);
+      setEditBillDate(localISOTime);
+    } else {
+      setEditBillDate('');
+    }
+  };
+
+  const handleSaveBillEdit = async () => {
+    if (!editingBill) return;
+
+    const totalAmt = Number(editingBill.total_amount || 0);
+    let finalPayMethod = editPaymentMethod;
+    let finalSplitCash = 0;
+    let finalSplitUpi = 0;
+
+    if (editPaymentMethod === 'Split' && totalAmt > 0) {
+      const cashVal = parseFloat(editSplitCash);
+      if (isNaN(cashVal) || cashVal < 0 || cashVal > totalAmt) {
+        toast.error(`Please enter a valid Cash amount between ₹0 and ₹${totalAmt} for split payment.`);
+        return;
+      }
+      finalSplitCash = cashVal;
+      finalSplitUpi = Math.max(0, totalAmt - cashVal);
+      finalPayMethod = `Split (Cash: ₹${finalSplitCash}, UPI: ₹${finalSplitUpi})`;
+    } else if (editPaymentMethod === 'Cash') {
+      finalSplitCash = totalAmt;
+      finalSplitUpi = 0;
+      finalPayMethod = 'Cash';
+    } else if (editPaymentMethod === 'UPI') {
+      finalSplitCash = 0;
+      finalSplitUpi = totalAmt;
+      finalPayMethod = 'UPI';
+    }
+
+    setSavingBillEdit(true);
+    try {
+      const updatePayload = {
+        customer_name: editCustomerName.trim() || 'Walk-in Customer',
+        customer_phone: editCustomerPhone.trim() || null,
+        payment_method: finalPayMethod,
+        split_cash: finalSplitCash,
+        split_upi: finalSplitUpi,
+      };
+
+      if (editBillDate) {
+        updatePayload.created_at = new Date(editBillDate).toISOString();
+      }
+
+      const updated = await db.updateBill(editingBill.id, updatePayload);
+      toast.success('Bill updated successfully!');
+
+      setBills(prev => prev.map(b => b.id === editingBill.id ? { ...b, ...updated } : b));
+      setEditingBill(null);
+      loadAllData();
+    } catch (err) {
+      console.error('Error updating bill:', err);
+      toast.error('Failed to update bill: ' + (err.message || 'Unknown error'));
+    } finally {
+      setSavingBillEdit(false);
+    }
+  };
 
   // Lookup Maps
   const dealerMap = {};
@@ -616,7 +708,8 @@ const Reports = () => {
             discountShare: itemDiscountShare,
             salePrice,
             profit,
-            paymentMethod: bill.payment_method || 'Cash'
+            paymentMethod: bill.payment_method || 'Cash',
+            bill: bill
           });
         }
       });
@@ -663,7 +756,15 @@ const Reports = () => {
       const returnedProd = ex.returned_product || products.find(p => p.id === ex.returned_product_id) || (origItem?.products || {});
       const exchangedProd = ex.exchanged_product || products.find(p => p.id === ex.exchanged_product_id) || {};
 
-      const retPrice = Number(origItem?.price_at_sale || returnedProd.selling_price || ex.returned_price || 0);
+      const rawPrice = Number(origItem?.price_at_sale || returnedProd.selling_price || ex.returned_price || 0);
+      let retPrice = rawPrice;
+      if (origBill) {
+        const billSub = (origBill.bill_items || []).reduce((s, bi) => s + Number(bi.price_at_sale || 0) * Number(bi.quantity || 1), 0);
+        const billTotal = Number(origBill.total_amount || 0);
+        if (billSub > 0 && billTotal < billSub) {
+          retPrice = Math.round(rawPrice * (billTotal / billSub));
+        }
+      }
 
       if (ex.returned_product_id) {
         const retValue = retPrice * (ex.returned_qty || 1);
@@ -1084,7 +1185,8 @@ const Reports = () => {
           grossAmount,
           discount,
           amount: Number(b.total_amount),
-          isPositive: true
+          isPositive: true,
+          bill: b
         });
       }
     });
@@ -1360,7 +1462,7 @@ const Reports = () => {
           </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Type</th><th>Buy Date</th><th>Sale Date</th><th>Dealer Name</th><th>Customer</th><th>Contact</th><th>Design Number</th><th>Size</th><th>Qty</th><th>Cost</th><th>Gross Price</th><th>Discount</th><th>Sale Price</th><th>Profit</th><th>Mode</th></tr></thead>
+              <thead><tr><th>Type</th><th>Buy Date</th><th>Sale Date</th><th>Dealer Name</th><th>Customer</th><th>Contact</th><th>Design Number</th><th>Size</th><th>Qty</th><th>Cost</th><th>Gross Price</th><th>Discount</th><th>Sale Price</th><th>Profit</th><th>Mode</th><th className="no-print">Action</th></tr></thead>
               <tbody>
                 {data.map((item, idx) => {
                   const isRet = item.type === 'Return';
@@ -1400,10 +1502,22 @@ const Reports = () => {
                         <MaskedPrice value={item.profit} formatter={fmt} prefix="" />
                       </td>
                       <td><span className="badge badge-secondary">{item.paymentMethod}</span></td>
+                      <td className="no-print">
+                        {item.bill && (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '3px 8px', fontSize: '11px', whiteSpace: 'nowrap' }}
+                            onClick={() => handleOpenEditBill(item.bill)}
+                            title="Edit Customer Details or Payment Mode"
+                          >
+                            ✏️ Edit
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
-                {data.length === 0 && <tr><td colSpan="15" style={{ textAlign: 'center', padding: '20px' }}>No sales records match filter</td></tr>}
+                {data.length === 0 && <tr><td colSpan="16" style={{ textAlign: 'center', padding: '20px' }}>No sales records match filter</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1759,7 +1873,7 @@ const Reports = () => {
       return (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Date & Time</th><th>Type</th><th>Reference ID</th><th>Party / Description</th><th>Payment Mode</th><th>Gross Amount</th><th>Discount</th><th>Final Amount</th></tr></thead>
+            <thead><tr><th>Date & Time</th><th>Type</th><th>Reference ID</th><th>Party / Description</th><th>Payment Mode</th><th>Gross Amount</th><th>Discount</th><th>Final Amount</th><th className="no-print">Action</th></tr></thead>
             <tbody>
               {data.map((t) => (
                 <tr key={t.id}>
@@ -1777,9 +1891,21 @@ const Reports = () => {
                   <td style={{ fontWeight: 700, fontSize: '14px', color: t.isPositive ? 'var(--success)' : 'var(--danger)' }}>
                     {t.isPositive ? '+ ' : '- '}₹{t.amount.toLocaleString('en-IN')}
                   </td>
+                  <td className="no-print">
+                    {t.bill && (
+                      <button
+                        className="btn btn-secondary"
+                        style={{ padding: '3px 8px', fontSize: '11px', whiteSpace: 'nowrap' }}
+                        onClick={() => handleOpenEditBill(t.bill)}
+                        title="Edit Bill Details"
+                      >
+                        ✏️ Edit
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
-              {data.length === 0 && <tr><td colSpan="8" style={{ textAlign: 'center', padding: '20px' }}>No transactions match filter</td></tr>}
+              {data.length === 0 && <tr><td colSpan="9" style={{ textAlign: 'center', padding: '20px' }}>No transactions match filter</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1902,8 +2028,231 @@ const Reports = () => {
 
         {/* Dynamic Table & Chart Content */}
         {renderActiveReportTable()}
-
       </div>
+
+      {/* Edit Bill Modal */}
+      {editingBill && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(4px)', zIndex: 10000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div className="card" style={{
+            width: '560px', maxWidth: '100%', margin: 0, padding: '28px',
+            maxHeight: '92vh', overflowY: 'auto', borderRadius: '16px',
+            boxShadow: '0 24px 48px rgba(0,0,0,0.25)', border: '1px solid var(--border)'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '14px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '20px' }}>✏️</span>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--dark)' }}>Edit Bill Details</h3>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 700, background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', fontSize: '12px' }}>
+                    #{editingBill.id.slice(0, 8).toUpperCase()}
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Update customer contact information and payment cash flow.
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: '4px 10px', fontSize: '16px', lineHeight: 1 }}
+                onClick={() => setEditingBill(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Editable Form */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Customer Name */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--dark)', marginBottom: '6px' }}>
+                  👤 Customer Name
+                </label>
+                <input
+                  type="text"
+                  className="form-control"
+                  style={{ width: '100%', marginBottom: 0 }}
+                  value={editCustomerName}
+                  onChange={(e) => setEditCustomerName(e.target.value)}
+                  placeholder="e.g. Walk-in Customer or Customer Name"
+                />
+              </div>
+
+              {/* Customer Phone */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--dark)', marginBottom: '6px' }}>
+                  📞 Customer Phone Number
+                </label>
+                <input
+                  type="tel"
+                  className="form-control"
+                  style={{ width: '100%', marginBottom: 0 }}
+                  value={editCustomerPhone}
+                  onChange={(e) => setEditCustomerPhone(e.target.value)}
+                  placeholder="e.g. 9876543210"
+                />
+              </div>
+
+              {/* Bill Date & Time */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--dark)', marginBottom: '6px' }}>
+                  📅 Bill Date & Time
+                </label>
+                <input
+                  type="datetime-local"
+                  className="form-control"
+                  style={{ width: '100%', marginBottom: 0 }}
+                  value={editBillDate}
+                  onChange={(e) => setEditBillDate(e.target.value)}
+                />
+              </div>
+
+              {/* Payment Method / Cash Flow */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--dark)', marginBottom: '6px' }}>
+                  💳 Payment Mode / Cash Flow
+                </label>
+                <select
+                  className="form-control"
+                  style={{ width: '100%', marginBottom: editPaymentMethod === 'Split' ? '12px' : 0, fontWeight: 600 }}
+                  value={editPaymentMethod}
+                  onChange={(e) => {
+                    const newMode = e.target.value;
+                    setEditPaymentMethod(newMode);
+                    if (newMode === 'Split') {
+                      const totalAmt = Number(editingBill.total_amount || 0);
+                      setEditSplitCash(editingBill.split_cash ? String(editingBill.split_cash) : String(Math.round(totalAmt / 2)));
+                    } else {
+                      setEditSplitCash('');
+                    }
+                  }}
+                >
+                  <option value="Cash">💵 Cash</option>
+                  <option value="UPI">📱 UPI / GPay / PhonePe</option>
+                  <option value="Split">💳 Split (Cash + UPI)</option>
+                </select>
+
+                {/* If Split is selected */}
+                {editPaymentMethod === 'Split' && (() => {
+                  const totalAmt = Number(editingBill.total_amount || 0);
+                  const cashVal = parseFloat(editSplitCash) || 0;
+                  const upiVal = Math.max(0, totalAmt - cashVal);
+
+                  return (
+                    <div style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '14px', marginTop: '6px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                            💵 Cash Collected (₹)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={totalAmt}
+                            className="form-control"
+                            style={{ width: '100%', marginBottom: 0, fontWeight: 700 }}
+                            value={editSplitCash}
+                            onChange={(e) => setEditSplitCash(e.target.value)}
+                            placeholder="₹ Cash"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                            📱 UPI Balance (₹) [Auto]
+                          </label>
+                          <input
+                            type="number"
+                            className="form-control"
+                            style={{ width: '100%', marginBottom: 0, fontWeight: 700, backgroundColor: '#e2e8f0', color: '#475569' }}
+                            value={upiVal}
+                            disabled
+                          />
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>
+                        Total Bill: <strong>₹{totalAmt.toLocaleString('en-IN')}</strong> = Cash ₹{cashVal} + UPI ₹{upiVal}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* STRICTLY LOCKED PRODUCT DETAILS */}
+              <div style={{ marginTop: '8px', background: '#fafaf9', border: '1px solid #e7e5e4', borderRadius: '10px', padding: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#44403c', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    🔒 Billed Items (Strictly Protected)
+                  </span>
+                  <span style={{ fontSize: '10px', background: '#fee2e2', color: '#991b1b', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                    Read-Only
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#78716c', marginBottom: '10px', lineHeight: '1.4' }}>
+                  Product lines, quantities, and prices cannot be altered after billing to guarantee 100% accurate inventory stock tracking.
+                </div>
+
+                <div style={{ maxHeight: '140px', overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: '6px', background: '#fff' }}>
+                  <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb', color: '#6b7280' }}>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>Item / Design</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'center' }}>Qty</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Price</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(editingBill.bill_items || []).map((bi, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                          <td style={{ padding: '6px 8px' }}>
+                            <strong style={{ color: 'var(--primary)' }}>{bi.products?.design_number || '#'}</strong>
+                            <span style={{ color: '#6b7280', marginLeft: '6px' }}>{bi.products?.category || 'Item'} {bi.products?.size ? `(${bi.products.size})` : ''}</span>
+                          </td>
+                          <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 600 }}>{bi.quantity}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>₹{Number(bi.price_at_sale || 0).toLocaleString('en-IN')}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>₹{(Number(bi.price_at_sale || 0) * Number(bi.quantity || 1)).toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed #d6d3d1' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#44403c' }}>Total Paid Amount:</span>
+                  <span style={{ fontSize: '16px', fontWeight: 800, color: 'var(--primary)' }}>₹{Number(editingBill.total_amount).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ flex: 1, padding: '10px', fontWeight: 600 }}
+                onClick={() => setEditingBill(null)}
+                disabled={savingBillEdit}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ flex: 1, padding: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                onClick={handleSaveBillEdit}
+                disabled={savingBillEdit}
+              >
+                {savingBillEdit ? '💾 Saving Changes...' : '💾 Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

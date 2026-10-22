@@ -473,8 +473,10 @@ class SupabaseDB {
       if (itemError) throw itemError;
 
       // Update stock
-      const { data: prod } = await supabase.from('products').select('quantity').eq('id', item.product_id).single();
-      await supabase.from('products').update({ quantity: prod.quantity - item.quantity }).eq('id', item.product_id);
+      const { data: prod } = await supabase.from('products').select('quantity').eq('id', item.product_id).maybeSingle();
+      if (prod) {
+        await supabase.from('products').update({ quantity: Math.max(0, Number(prod.quantity || 0) - Number(item.quantity || 1)) }).eq('id', item.product_id);
+      }
     }
 
     this.cache = {}; // invalidate cache on sale
@@ -688,17 +690,56 @@ class SupabaseDB {
       .order('created_at', { ascending: false });
     if (error || !data) return [];
 
-    const exIds = [...new Set(data.map(r => r.exchanged_product_id).filter(Boolean))];
-    if (exIds.length > 0) {
-      const { data: prods } = await supabase.from('products').select('*').in('id', exIds);
+    const allPIds = [...new Set([
+      ...data.map(r => r.exchanged_product_id),
+      ...data.map(r => r.returned_product_id)
+    ].filter(Boolean))];
+
+    if (allPIds.length > 0) {
+      const { data: prods } = await supabase.from('products').select('*').in('id', allPIds);
       if (prods) {
         const prodMap = {};
         prods.forEach(p => prodMap[p.id] = p);
         data.forEach(r => {
           if (r.exchanged_product_id) r.exchanged_product = prodMap[r.exchanged_product_id];
+          if (r.returned_product_id) r.returned_product = prodMap[r.returned_product_id];
         });
       }
     }
+    return data;
+  }
+
+  async updateBill(bill_id, updateData) {
+    if (!bill_id) throw new Error("Bill ID required");
+
+    // Whitelist allowed fields: customer name, phone, payment method, cash/upi split, created_at
+    // Product details and items are strictly NOT modified to preserve inventory accuracy
+    const allowed = {};
+    if (updateData.customer_name !== undefined) allowed.customer_name = updateData.customer_name.trim() || 'Walk-in Customer';
+    if (updateData.customer_phone !== undefined) allowed.customer_phone = updateData.customer_phone.trim() || null;
+    if (updateData.payment_method !== undefined) allowed.payment_method = updateData.payment_method;
+    if (updateData.split_cash !== undefined) allowed.split_cash = Number(updateData.split_cash || 0);
+    if (updateData.split_upi !== undefined) allowed.split_upi = Number(updateData.split_upi || 0);
+    if (updateData.created_at !== undefined) allowed.created_at = updateData.created_at;
+
+    const { data, error } = await supabase
+      .from('bills')
+      .update(allowed)
+      .eq('id', bill_id)
+      .select('*, bill_items(*, products(*))')
+      .single();
+
+    if (error) throw error;
+
+    // Keep linked returns/exchanges in sync if customer details changed
+    if (allowed.customer_name || allowed.customer_phone !== undefined) {
+      const syncObj = {};
+      if (allowed.customer_name) syncObj.customer_name = allowed.customer_name;
+      if (allowed.customer_phone !== undefined) syncObj.customer_phone = allowed.customer_phone;
+      await supabase.from('returns_exchanges').update(syncObj).eq('original_bill_id', bill_id);
+    }
+
+    this.cache = {}; // invalidate cache
     return data;
   }
 
@@ -770,19 +811,19 @@ class SupabaseDB {
       .single();
     if (exErr) throw exErr;
 
-    // 2. Adjust Stock for Returned Item
+    // 2. Adjust Stock for Returned Item (+ adds to stock, unless Defective / Damaged)
     if (exchangeData.returned_product_id && exchangeData.return_reason !== 'Defective / Damaged') {
-      const { data: retProd } = await supabase.from('products').select('quantity').eq('id', exchangeData.returned_product_id).single();
+      const { data: retProd } = await supabase.from('products').select('quantity').eq('id', exchangeData.returned_product_id).maybeSingle();
       if (retProd) {
-        await supabase.from('products').update({ quantity: retProd.quantity + exchangeData.returned_qty }).eq('id', exchangeData.returned_product_id);
+        await supabase.from('products').update({ quantity: Number(retProd.quantity || 0) + Number(exchangeData.returned_qty || 1) }).eq('id', exchangeData.returned_product_id);
       }
     }
 
-    // 3. Adjust Stock for New Exchanged Item
+    // 3. Adjust Stock for New Exchanged Item (- subtracts from stock)
     if (exchangeData.exchanged_product_id) {
-      const { data: exProd } = await supabase.from('products').select('quantity').eq('id', exchangeData.exchanged_product_id).single();
+      const { data: exProd } = await supabase.from('products').select('quantity').eq('id', exchangeData.exchanged_product_id).maybeSingle();
       if (exProd) {
-        await supabase.from('products').update({ quantity: exProd.quantity - exchangeData.exchanged_qty }).eq('id', exchangeData.exchanged_product_id);
+        await supabase.from('products').update({ quantity: Math.max(0, Number(exProd.quantity || 0) - Number(exchangeData.exchanged_qty || 1)) }).eq('id', exchangeData.exchanged_product_id);
       }
     }
 
@@ -1040,21 +1081,37 @@ class SupabaseDB {
 
       if (exErr) throw exErr;
       insertedRecords.push(exRecord);
+    }
 
-      // Adjust Stock for Returned Item
-      if (row.returned_product_id && row.return_reason !== 'Defective / Damaged') {
-        const { data: retProd } = await supabase.from('products').select('quantity').eq('id', row.returned_product_id).single();
-        if (retProd) {
-          await supabase.from('products').update({ quantity: retProd.quantity + row.returned_qty }).eq('id', row.returned_product_id);
-        }
+    // 2. Adjust Stock for Returned Items (+ adds to store inventory, unless Defective / Damaged)
+    const returnStockMap = {};
+    (returns || []).forEach(r => {
+      if (r.product_id && r.reason !== 'Defective / Damaged') {
+        returnStockMap[r.product_id] = (returnStockMap[r.product_id] || 0) + Number(r.qty || 1);
       }
+    });
 
-      // Adjust Stock for Exchanged Item
-      if (row.exchanged_product_id) {
-        const { data: exProd } = await supabase.from('products').select('quantity').eq('id', row.exchanged_product_id).single();
-        if (exProd) {
-          await supabase.from('products').update({ quantity: exProd.quantity - row.exchanged_qty }).eq('id', row.exchanged_product_id);
-        }
+    for (const prodId of Object.keys(returnStockMap)) {
+      const { data: retProd } = await supabase.from('products').select('quantity').eq('id', prodId).maybeSingle();
+      if (retProd) {
+        const newQty = Number(retProd.quantity || 0) + Number(returnStockMap[prodId]);
+        await supabase.from('products').update({ quantity: newQty }).eq('id', prodId);
+      }
+    }
+
+    // 3. Adjust Stock for New Exchanged Items (- deducts from store inventory)
+    const exchangeStockMap = {};
+    (exchanges || []).forEach(e => {
+      if (e.product_id) {
+        exchangeStockMap[e.product_id] = (exchangeStockMap[e.product_id] || 0) + Number(e.qty || 1);
+      }
+    });
+
+    for (const prodId of Object.keys(exchangeStockMap)) {
+      const { data: exProd } = await supabase.from('products').select('quantity').eq('id', prodId).maybeSingle();
+      if (exProd) {
+        const newQty = Math.max(0, Number(exProd.quantity || 0) - Number(exchangeStockMap[prodId]));
+        await supabase.from('products').update({ quantity: newQty }).eq('id', prodId);
       }
     }
 
