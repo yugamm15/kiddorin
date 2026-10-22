@@ -131,10 +131,10 @@ const Billing = () => {
         }
       }
       const sCashAmt = paymentMethod === 'split' ? (parseFloat(splitCash) || 0) : (paymentMethod === 'cash' ? finalAmount : 0);
-      const sUpiAmt = paymentMethod === 'split' ? Math.max(0, finalAmount - sCashAmt) : (paymentMethod === 'upi' ? finalAmount : 0);
-      const payStr = finalAmount === 0 ? 'Store Credit' : (
-        paymentMethod === 'cash' ? 'Cash' : (paymentMethod === 'upi' ? 'UPI' : `Split (Cash: ₹${sCashAmt}, UPI: ₹${sUpiAmt})`)
-      );
+      const basePay = paymentMethod === 'cash' ? 'Cash' : (paymentMethod === 'upi' ? 'UPI' : `Split (Cash: ₹${sCashAmt}, UPI: ₹${sUpiAmt})`);
+      const payStr = finalAmount === 0
+        ? `Store Credit (₹${creditApplied})`
+        : (creditApplied > 0 ? `${basePay} (₹${finalAmount}) + Credit Note: ₹${creditApplied}` : basePay);
 
       // Create a mapped array for db service
       const dbItems = items.map(i => ({ product_id: i.product_id, quantity: i.qty, price: i.price }));

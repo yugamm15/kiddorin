@@ -222,32 +222,44 @@ const Expenses = () => {
   // Calculate Sales Inflow
   let cashSales = 0;
   let upiSales = 0;
+  let creditRedeemed = 0;
   filteredBills.forEach(b => {
     const pm = (b.payment_method || '').toLowerCase();
-    if (pm === 'cash') {
-      cashSales += Number(b.total_amount || 0);
-    } else if (pm === 'upi') {
-      upiSales += Number(b.total_amount || 0);
-    } else if (pm.includes('split') || Number(b.split_cash || 0) > 0 || Number(b.split_upi || 0) > 0) {
-      let sc = Number(b.split_cash || 0);
-      let su = Number(b.split_upi || 0);
-      if (sc === 0 && su === 0 && pm.includes('split')) {
-        const match = pm.match(/Cash:\s*₹?([\d.]+).*?(?:GPay|UPI):\s*₹?([\d.]+)/i) || (b.payment_method || '').match(/₹?([\d.]+).*?₹?([\d.]+)/);
-        if (match) {
-          sc = parseFloat(match[1]) || 0;
-          su = parseFloat(match[2]) || 0;
-        } else {
-          const tot = Number(b.total_amount || 0);
-          sc = tot / 2;
-          su = tot / 2;
-        }
+    const tot = Number(b.total_amount || 0);
+
+    const credMatch = (b.payment_method || '').match(/Credit\s*(?:Note)?\s*:\s*₹?([\d.]+)/i) || 
+                      (b.payment_method || '').match(/Store Credit\s*\(\s*₹?([\d.]+)\s*\)/i);
+    if (credMatch) {
+      creditRedeemed += parseFloat(credMatch[1]) || 0;
+    } else if (pm.includes('store credit') || pm.includes('credit note')) {
+      if (!pm.includes('cash') && !pm.includes('upi') && !pm.includes('gpay') && !pm.includes('split')) {
+        creditRedeemed += tot;
       }
+    }
+
+    const sc = Number(b.split_cash || 0);
+    const su = Number(b.split_upi || 0);
+
+    if (sc > 0 || su > 0) {
       cashSales += sc;
       upiSales += su;
+    } else if (pm.includes('split')) {
+      const match = pm.match(/Cash:\s*₹?([\d.]+).*?(?:GPay|UPI):\s*₹?([\d.]+)/i) || (b.payment_method || '').match(/₹?([\d.]+).*?₹?([\d.]+)/);
+      if (match) {
+        cashSales += parseFloat(match[1]) || 0;
+        upiSales += parseFloat(match[2]) || 0;
+      } else {
+        cashSales += tot / 2;
+        upiSales += tot / 2;
+      }
+    } else if (pm.includes('upi') || pm.includes('gpay')) {
+      upiSales += tot;
+    } else if (pm.includes('cash')) {
+      cashSales += tot;
     } else if (pm.includes('store credit') || pm.includes('credit note')) {
-      // Store credit voucher redemption; no cash/upi added
+      // Pure store credit voucher; no cash or UPI in drawer
     } else {
-      cashSales += Number(b.total_amount || 0);
+      cashSales += tot;
     }
   });
 

@@ -34,6 +34,7 @@ const Reports = () => {
   const [editCustomerPhone, setEditCustomerPhone] = useState('');
   const [editPaymentMethod, setEditPaymentMethod] = useState('Cash');
   const [editSplitCash, setEditSplitCash] = useState('');
+  const [editCreditAmount, setEditCreditAmount] = useState('');
   const [editBillDate, setEditBillDate] = useState('');
   const [savingBillEdit, setSavingBillEdit] = useState(false);
 
@@ -228,17 +229,90 @@ const Reports = () => {
     loadAllData();
   }, [user]);
 
+  const resolveBillPaymentBreakdown = (bill) => {
+    const pm = (bill.payment_method || '').toLowerCase();
+    const totalAmt = Number(bill.total_amount || 0);
+    const itemsSum = (bill.bill_items || []).reduce((s, bi) => s + (Number(bi.price_at_sale || 0) * Number(bi.quantity || 1)), 0);
+
+    let creditAmt = 0;
+    const credMatch = (bill.payment_method || '').match(/Credit\s*(?:Note)?\s*:\s*₹?([\d.]+)/i) || 
+                      (bill.payment_method || '').match(/Store Credit\s*\(\s*₹?([\d.]+)\s*\)/i);
+    if (credMatch) {
+      creditAmt = parseFloat(credMatch[1]) || 0;
+    } else if (pm.includes('store credit') || pm.includes('credit note')) {
+      if (!pm.includes('cash') && !pm.includes('upi') && !pm.includes('gpay') && !pm.includes('split')) {
+        creditAmt = totalAmt > 0 ? totalAmt : itemsSum;
+      }
+    }
+
+    let cashAmt = 0;
+    let upiAmt = 0;
+
+    const sc = Number(bill.split_cash || 0);
+    const su = Number(bill.split_upi || 0);
+
+    if (sc > 0 || su > 0) {
+      cashAmt = sc;
+      upiAmt = su;
+    } else if (pm.includes('split')) {
+      const match = pm.match(/Cash:\s*₹?([\d.]+).*?(?:GPay|UPI):\s*₹?([\d.]+)/i) || (bill.payment_method || '').match(/₹?([\d.]+).*?₹?([\d.]+)/);
+      if (match) {
+        cashAmt = parseFloat(match[1]) || 0;
+        upiAmt = parseFloat(match[2]) || 0;
+      } else {
+        cashAmt = totalAmt / 2;
+        upiAmt = totalAmt / 2;
+      }
+    } else if (pm.includes('upi') || pm.includes('gpay')) {
+      upiAmt = totalAmt;
+    } else if (pm.includes('cash')) {
+      cashAmt = totalAmt;
+    } else if (pm.includes('store credit') || pm.includes('credit note')) {
+      cashAmt = 0;
+      upiAmt = 0;
+    } else {
+      cashAmt = totalAmt;
+    }
+
+    const isStoreCreditOnly = (cashAmt === 0 && upiAmt === 0 && (creditAmt > 0 || pm.includes('store credit') || pm.includes('credit note')));
+
+    return { cashAmt, upiAmt, creditAmt, isStoreCreditOnly };
+  };
+
+  const resolveBillDiscount = (bill) => {
+    const itemsSum = (bill.bill_items || []).reduce(
+      (s, bi) => s + (Number(bi.price_at_sale || 0) * Number(bi.quantity || 1)), 0
+    );
+    const paid = Number(bill.total_amount || 0);
+    const { creditAmt, isStoreCreditOnly } = resolveBillPaymentBreakdown(bill);
+
+    // If the bill was fully settled using an existing Store Credit voucher, it was not discounted
+    if (isStoreCreditOnly) {
+      return 0;
+    }
+
+    // Real discount is: itemsSum - (paid + creditAmt)
+    const discount = itemsSum - (paid + creditAmt);
+    return discount > 0 ? Math.round(discount) : 0;
+  };
+
   const handleOpenEditBill = (bill) => {
     if (!bill) return;
     setEditingBill(bill);
     setEditCustomerName(bill.customer_name || 'Walk-in Customer');
     setEditCustomerPhone(bill.customer_phone || '');
 
+    const { cashAmt, creditAmt, isStoreCreditOnly } = resolveBillPaymentBreakdown(bill);
+    setEditCreditAmount(creditAmt > 0 ? String(creditAmt) : '');
+
     const pmLower = (bill.payment_method || '').toLowerCase();
-    if (pmLower.includes('split')) {
+    if (isStoreCreditOnly) {
+      setEditPaymentMethod('Store Credit');
+      setEditSplitCash('');
+    } else if (bill.split_cash > 0 || bill.split_upi > 0 || pmLower.includes('split')) {
       setEditPaymentMethod('Split');
-      setEditSplitCash(bill.split_cash !== undefined && bill.split_cash !== null ? String(bill.split_cash) : '');
-    } else if (pmLower.includes('upi')) {
+      setEditSplitCash(String(cashAmt));
+    } else if (pmLower.includes('upi') || pmLower.includes('gpay')) {
       setEditPaymentMethod('UPI');
       setEditSplitCash('');
     } else {
@@ -260,11 +334,16 @@ const Reports = () => {
     if (!editingBill) return;
 
     const totalAmt = Number(editingBill.total_amount || 0);
+    const creditVal = parseFloat(editCreditAmount) || 0;
     let finalPayMethod = editPaymentMethod;
     let finalSplitCash = 0;
     let finalSplitUpi = 0;
 
-    if (editPaymentMethod === 'Split' && totalAmt > 0) {
+    if (editPaymentMethod === 'Store Credit') {
+      finalSplitCash = 0;
+      finalSplitUpi = 0;
+      finalPayMethod = creditVal > 0 ? `Store Credit (₹${creditVal})` : 'Store Credit';
+    } else if (editPaymentMethod === 'Split' && totalAmt > 0) {
       const cashVal = parseFloat(editSplitCash);
       if (isNaN(cashVal) || cashVal < 0 || cashVal > totalAmt) {
         toast.error(`Please enter a valid Cash amount between ₹0 and ₹${totalAmt} for split payment.`);
@@ -272,15 +351,16 @@ const Reports = () => {
       }
       finalSplitCash = cashVal;
       finalSplitUpi = Math.max(0, totalAmt - cashVal);
-      finalPayMethod = `Split (Cash: ₹${finalSplitCash}, UPI: ₹${finalSplitUpi})`;
+      const splitStr = `Split (Cash: ₹${finalSplitCash}, UPI: ₹${finalSplitUpi})`;
+      finalPayMethod = creditVal > 0 ? `${splitStr} + Credit Note: ₹${creditVal}` : splitStr;
     } else if (editPaymentMethod === 'Cash') {
       finalSplitCash = totalAmt;
       finalSplitUpi = 0;
-      finalPayMethod = 'Cash';
+      finalPayMethod = creditVal > 0 ? `Cash (₹${totalAmt}) + Credit Note: ₹${creditVal}` : 'Cash';
     } else if (editPaymentMethod === 'UPI') {
       finalSplitCash = 0;
       finalSplitUpi = totalAmt;
-      finalPayMethod = 'UPI';
+      finalPayMethod = creditVal > 0 ? `UPI (₹${totalAmt}) + Credit Note: ₹${creditVal}` : 'UPI';
     }
 
     setSavingBillEdit(true);
@@ -657,19 +737,6 @@ const Reports = () => {
     });
   };
 
-  const resolveBillDiscount = (bill) => {
-    const itemsSum = (bill.bill_items || []).reduce(
-      (s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0
-    );
-    const paid = Number(bill.total_amount || 0);
-    // If the bill was fully settled using an existing Store Credit voucher, it was not discounted
-    if ((bill.payment_method || '').toLowerCase().includes('store credit') && paid === 0) {
-      return 0;
-    }
-    const discount = itemsSum - paid;
-    return discount > 0 ? Math.round(discount) : 0;
-  };
-
   // 2. Sale Report (Pure POS Sales only)
   const getFilteredSalesItems = () => {
     const itemsList = [];
@@ -677,21 +744,29 @@ const Reports = () => {
     bills.forEach(bill => {
       if (!filterByBranchAndDate(bill.created_at, bill.branch_id)) return;
 
-      const billSubtotal = (bill.bill_items || []).reduce((s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0);
+      const billSubtotal = (bill.bill_items || []).reduce((s, bi) => s + (Number(bi.price_at_sale || 0) * Number(bi.quantity || 1)), 0);
       const billDiscount = resolveBillDiscount(bill);
+      const { isStoreCreditOnly, creditAmt } = resolveBillPaymentBreakdown(bill);
 
       (bill.bill_items || []).forEach(bi => {
         const prod = bi.products || {};
         const dealerName = getDealerName(prod.dealer_id, prod.design_number, 'Direct', prod.id, prod.dealer_name);
         const buyDate = prod.created_at ? new Date(prod.created_at).toLocaleDateString('en-IN') : '-';
         const saleDate = bill.created_at ? new Date(bill.created_at).toLocaleDateString('en-IN') : '-';
-        const cost = Number(prod.purchase_price || 0) * bi.quantity;
-        const itemGross = Number(bi.price_at_sale || 0) * bi.quantity;
+        const cost = Number(prod.purchase_price || 0) * Number(bi.quantity || 1);
+        const itemGross = Number(bi.price_at_sale || 0) * Number(bi.quantity || 1);
         const itemDiscountShare = billSubtotal > 0 ? Math.round((itemGross / billSubtotal) * billDiscount) : 0;
         const salePrice = itemGross - itemDiscountShare;
         const profit = salePrice - cost;
 
-        if (matchSearch([prod.design_number, prod.size, prod.category, dealerName, bill.customer_name, bill.customer_phone, bill.payment_method])) {
+        let displayMode = bill.payment_method || 'Cash';
+        if (isStoreCreditOnly) {
+          displayMode = '💳 Store Credit (Non-Cash)';
+        } else if (creditAmt > 0 && !displayMode.toLowerCase().includes('credit note')) {
+          displayMode = `${displayMode} + 💳 Credit Note (₹${creditAmt})`;
+        }
+
+        if (matchSearch([prod.design_number, prod.size, prod.category, dealerName, bill.customer_name, bill.customer_phone, displayMode])) {
           itemsList.push({
             id: bi.id,
             type: 'Sale',
@@ -702,13 +777,13 @@ const Reports = () => {
             contact: bill.customer_phone || '-',
             design: prod.design_number || 'Item',
             size: prod.size || '-',
-            qty: bi.quantity,
+            qty: Number(bi.quantity || 1),
             cost,
             grossPrice: itemGross,
             discountShare: itemDiscountShare,
             salePrice,
             profit,
-            paymentMethod: bill.payment_method || 'Cash',
+            paymentMethod: displayMode,
             bill: bill
           });
         }
@@ -825,46 +900,23 @@ const Reports = () => {
   const getFilteredPaymentStats = () => {
     let salesCash = 0;
     let salesUpi = 0;
+    let creditNotesRedeemed = 0;
     let cashCount = 0;
     let upiCount = 0;
+    let creditRedeemedCount = 0;
 
     bills.forEach(b => {
       if (!filterByBranchAndDate(b.created_at, b.branch_id)) return;
       if (!matchSearch([b.customer_name, b.customer_phone, b.id])) return;
 
-      const pm = (b.payment_method || '').toLowerCase();
-      const tot = Number(b.total_amount || 0);
+      const { cashAmt, upiAmt, creditAmt } = resolveBillPaymentBreakdown(b);
+      salesCash += cashAmt;
+      salesUpi += upiAmt;
+      creditNotesRedeemed += creditAmt;
 
-      if (pm === 'cash') {
-        salesCash += tot;
-        if (tot > 0) cashCount++;
-      } else if (pm === 'upi') {
-        salesUpi += tot;
-        if (tot > 0) upiCount++;
-      } else if (pm.includes('split') || (Number(b.split_cash || 0) > 0 || Number(b.split_upi || 0) > 0)) {
-        let sc = Number(b.split_cash || 0);
-        let su = Number(b.split_upi || 0);
-
-        if (sc === 0 && su === 0 && pm.includes('split')) {
-          const match = pm.match(/Cash:\s*₹?([\d.]+).*?(?:GPay|UPI):\s*₹?([\d.]+)/i) || (b.payment_method || '').match(/₹?([\d.]+).*?₹?([\d.]+)/);
-          if (match) {
-            sc = parseFloat(match[1]) || 0;
-            su = parseFloat(match[2]) || 0;
-          } else {
-            sc = tot / 2;
-            su = tot / 2;
-          }
-        }
-        salesCash += sc;
-        salesUpi += su;
-        if (sc > 0) cashCount++;
-        if (su > 0) upiCount++;
-      } else if (pm.includes('store credit') || pm.includes('credit note')) {
-        // Customer paid with store credit voucher; no cash or upi added to drawer
-      } else {
-        salesCash += tot;
-        if (tot > 0) cashCount++;
-      }
+      if (cashAmt > 0) cashCount++;
+      if (upiAmt > 0) upiCount++;
+      if (creditAmt > 0) creditRedeemedCount++;
     });
 
     let exchangeCashIn = 0;
@@ -949,12 +1001,15 @@ const Reports = () => {
 
     const modes = [
       { mode: '💵 Cash (Sales + Exchanges)', count: cashCount, revenue: salesCash + exchangeCashIn },
-      { mode: '📱 UPI (Sales + Exchanges)', count: upiCount, revenue: salesUpi + exchangeUpiIn }
+      { mode: '📱 UPI (Sales + Exchanges)', count: upiCount, revenue: salesUpi + exchangeUpiIn },
+      ...(creditNotesRedeemed > 0 ? [{ mode: '💳 Store Credit Redeemed (Non-Cash Sales)', count: creditRedeemedCount, revenue: creditNotesRedeemed }] : [])
     ].filter(s => s.count > 0 || s.revenue !== 0);
 
     return {
       salesCash,
       salesUpi,
+      creditNotesRedeemed,
+      creditRedeemedCount,
       exchangeCashIn,
       exchangeUpiIn,
       exchangeCashRefund,
@@ -1038,12 +1093,9 @@ const Reports = () => {
 
       const itemsSum = (b.bill_items || []).reduce((s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0);
       const billDiscount = resolveBillDiscount(b);
-      const isStoreCreditBill = (b.payment_method || '').toLowerCase().includes('store credit');
 
-      // If bill was paid via Store Credit voucher, recognize the items value so revenue isn't lost
-      const billRevenue = (isStoreCreditBill && Number(b.total_amount || 0) === 0)
-        ? Math.max(0, itemsSum - billDiscount)
-        : Number(b.total_amount || 0);
+      // Sale revenue is true merchandise value delivered minus actual discounts
+      const billRevenue = Math.max(0, itemsSum - billDiscount);
 
       dateMap[d].revenue += billRevenue;
 
@@ -1174,6 +1226,15 @@ const Reports = () => {
           (s, bi) => s + (Number(bi.price_at_sale || 0) * bi.quantity), 0
         );
         const discount = resolveBillDiscount(b);
+        const { creditAmt, isStoreCreditOnly } = resolveBillPaymentBreakdown(b);
+        let modeLabel = b.payment_method || 'Cash';
+        if (isStoreCreditOnly) {
+          modeLabel = '💳 Store Credit (Non-Cash)';
+        } else if (creditAmt > 0 && !modeLabel.toLowerCase().includes('credit note')) {
+          modeLabel = `${modeLabel} + 💳 Credit Note (₹${creditAmt})`;
+        }
+        const effectiveBillAmount = isStoreCreditOnly ? Math.max(0, grossAmount - discount) : Number(b.total_amount);
+
         list.push({
           id: `bill-${b.id}`,
           dateStr: new Date(b.created_at).toLocaleString('en-IN'),
@@ -1181,11 +1242,12 @@ const Reports = () => {
           type: '🛍️ Sale Receipt',
           ref: b.id.slice(0, 8).toUpperCase(),
           party: `${b.customer_name || 'Walk-in'} (${b.customer_phone || '-'})`,
-          mode: b.payment_method || 'Cash',
+          mode: modeLabel,
           grossAmount,
           discount,
-          amount: Number(b.total_amount),
+          amount: effectiveBillAmount,
           isPositive: true,
+          isStoreCredit: isStoreCreditOnly,
           bill: b
         });
       }
@@ -1211,20 +1273,22 @@ const Reports = () => {
       const netAmt = Number(ex.net_amount || 0);
       const discount = Number(ex.discount_amount || 0);
       const grossAmt = Math.abs(netAmt) + discount;
+      const isStoreCreditReturn = netAmt < 0 && !(ex.payment_mode || '').toLowerCase().includes('cash refund');
 
       if (matchSearch([ex.bill_number, ex.customer_name, ex.customer_phone, ex.action_type, 'Exchange', 'Return', returnedProd.category, exchangedProd.category])) {
         list.push({
           id: `ex-${ex.id}`,
           dateStr: new Date(ex.created_at).toLocaleString('en-IN'),
           rawDate: new Date(ex.created_at),
-          type: ex.action_type === 'exchange' ? '🔄 Exchange' : '↩️ Return',
+          type: ex.action_type === 'exchange' ? '🔄 Exchange' : (isStoreCreditReturn ? '🎟️ Return (Store Credit)' : '↩️ Return (Refund)'),
           ref: ex.bill_number || `EX-#${ex.id}`,
           party,
-          mode: ex.payment_mode || (netAmt < 0 ? 'Store Credit / Refund' : 'Cash/UPI'),
+          mode: isStoreCreditReturn ? '🎟️ Store Credit Note Issued' : (ex.payment_mode || 'Cash/UPI'),
           grossAmount: grossAmt,
           discount,
           amount: Math.abs(netAmt),
-          isPositive: netAmt >= 0
+          isPositive: netAmt >= 0,
+          isStoreCredit: isStoreCreditReturn
         });
       }
     });
@@ -1451,14 +1515,101 @@ const Reports = () => {
       const totalRev = data.reduce((s, i) => s + i.salePrice, 0);
       const totalProfit = data.reduce((s, i) => s + i.profit, 0);
 
+      let totalSalesCash = 0;
+      let totalSalesUpi = 0;
+      let totalSalesCredit = 0;
+      const seenBillIds = new Set();
+
+      data.forEach(item => {
+        if (item.bill && !seenBillIds.has(item.bill.id)) {
+          seenBillIds.add(item.bill.id);
+          const { cashAmt, upiAmt, creditAmt } = resolveBillPaymentBreakdown(item.bill);
+          totalSalesCash += cashAmt;
+          totalSalesUpi += upiAmt;
+          totalSalesCredit += creditAmt;
+        }
+      });
+      const totalLiquidSales = totalSalesCash + totalSalesUpi;
+
       return (
         <div>
-          <div className="stat-grid" style={{ marginBottom: '20px' }}>
+          <div className="stat-grid" style={{ marginBottom: '16px' }}>
             <div className="stat-card"><div className="label">Total Items Sold</div><div className="value">{data.reduce((s, i) => s + i.qty, 0)} Units</div></div>
             <div className="stat-card"><div className="label">Gross Sale Value</div><div className="value">₹{totalGross.toLocaleString('en-IN')}</div></div>
             <div className="stat-card"><div className="label">Total Discount Given</div><div className="value" style={{ color: 'var(--danger)' }}>- ₹{totalDiscount.toLocaleString('en-IN')}</div></div>
             <div className="stat-card"><div className="label">Net Sales Revenue</div><div className="value">₹{totalRev.toLocaleString('en-IN')}</div></div>
             <div className="stat-card"><div className="label">Total Net Profit</div><div className="value" style={{ color: 'var(--success)' }}><MaskedPrice value={totalProfit} /></div></div>
+          </div>
+
+          {/* Real Money & Drawer Cash Reconciliation Banner */}
+          <div style={{
+            background: 'linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%)',
+            border: '1.5px solid #86EFAC',
+            borderRadius: '10px',
+            padding: '16px 20px',
+            marginBottom: '20px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '24px' }}>🧮</span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '16px', color: '#14532D' }}>
+                    Real Shop Money Collected: ₹{totalLiquidSales.toLocaleString('en-IN')}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#166534', fontWeight: 500 }}>
+                    Exact liquid sales revenue collected (matches physical counter drawer + bank QR deposits)
+                  </div>
+                </div>
+              </div>
+              {totalSalesCredit > 0 && (
+                <div style={{
+                  background: '#EFF6FF',
+                  border: '1px solid #BFDBFE',
+                  borderRadius: '8px',
+                  padding: '6px 14px',
+                  fontSize: '12px',
+                  color: '#1E40AF',
+                  fontWeight: 600
+                }}>
+                  💳 <strong>₹{totalSalesCredit.toLocaleString('en-IN')}</strong> settled via Store Credit Note vouchers (No cash in drawer)
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+              <div style={{ background: '#FFFFFF', padding: '12px 14px', borderRadius: '8px', border: '1px solid #DCFCE7' }}>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#15803D', textTransform: 'uppercase' }}>💵 Cash In Shop Drawer</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#15803D', marginTop: '2px' }}>
+                  ₹{totalSalesCash.toLocaleString('en-IN')}
+                </div>
+                <div style={{ fontSize: '10px', color: '#64748B' }}>Physical drawer cash from sales</div>
+              </div>
+
+              <div style={{ background: '#FFFFFF', padding: '12px 14px', borderRadius: '8px', border: '1px solid #E0F2FE' }}>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#0284C7', textTransform: 'uppercase' }}>📱 Bank UPI / QR</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#0284C7', marginTop: '2px' }}>
+                  ₹{totalSalesUpi.toLocaleString('en-IN')}
+                </div>
+                <div style={{ fontSize: '10px', color: '#64748B' }}>Received directly in bank account</div>
+              </div>
+
+              <div style={{ background: '#FFFFFF', padding: '12px 14px', borderRadius: '8px', border: '1px solid #FEF3C7' }}>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#D97706', textTransform: 'uppercase' }}>💳 Store Credit Redeemed</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#D97706', marginTop: '2px' }}>
+                  ₹{totalSalesCredit.toLocaleString('en-IN')}
+                </div>
+                <div style={{ fontSize: '10px', color: '#64748B' }}>Customer return credit vouchers</div>
+              </div>
+
+              <div style={{ background: '#F8FAFC', padding: '12px 14px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#475569', textTransform: 'uppercase' }}>📊 Total Sales Settled</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A', marginTop: '2px' }}>
+                  ₹{totalRev.toLocaleString('en-IN')}
+                </div>
+                <div style={{ fontSize: '10px', color: '#64748B' }}>Cash + UPI + Store Credit combined</div>
+              </div>
+            </div>
           </div>
           <div className="table-wrap">
             <table>
@@ -1662,13 +1813,23 @@ const Reports = () => {
               </div>
             </div>
 
+            <div className="stat-card" style={{ borderLeft: '4px solid #8b5cf6' }}>
+              <div className="label">💳 Store Credit Redeemed (Sales)</div>
+              <div className="value" style={{ color: '#8b5cf6' }}>
+                ₹{data.creditNotesRedeemed.toLocaleString('en-IN')}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                {data.creditRedeemedCount} bills settled via credit notes
+              </div>
+            </div>
+
             <div className="stat-card" style={{ borderLeft: '4px solid #d97706' }}>
-              <div className="label">💳 Customer Credit Vouchers</div>
+              <div className="label">🎟️ Store Credit Issued (Returns)</div>
               <div className="value" style={{ color: '#d97706' }}>
                 ₹{data.creditNotesIssued.toLocaleString('en-IN')}
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Store credit issued (not cash payout)
+                Issued for returns (no cash payout)
               </div>
             </div>
           </div>
@@ -1722,6 +1883,12 @@ const Reports = () => {
                 </div>
               </div>
             </div>
+
+            {data.creditNotesRedeemed > 0 && (
+              <div style={{ marginTop: '12px', padding: '10px 14px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '8px', fontSize: '12px', color: '#1E40AF' }}>
+                💡 <strong>₹{data.creditNotesRedeemed.toLocaleString('en-IN')}</strong> of sales was settled using customer Store Credit vouchers. Because store credit vouchers bring no new physical cash into the shop counter, they are cleanly separated to ensure your drawer cash tally of <strong>₹{data.netCashInDrawer.toLocaleString('en-IN')}</strong> matches the physical bills in your cash drawer 100%.
+              </div>
+            )}
           </div>
 
           {renderChart('pie', data.modes.map(d => ({ name: d.mode, value: d.revenue })), 'name', 'value')}
@@ -1881,15 +2048,23 @@ const Reports = () => {
                   <td style={{ fontWeight: 600 }}>{t.type}</td>
                   <td><code>{t.ref}</code></td>
                   <td style={{ maxWidth: '250px' }}>{t.party}</td>
-                  <td><span className="badge badge-blue">{t.mode}</span></td>
+                  <td>
+                    <span className={`badge ${t.isStoreCredit || (t.mode || '').toLowerCase().includes('store credit') ? 'badge-yellow' : 'badge-blue'}`}>
+                      {t.mode}
+                    </span>
+                  </td>
                   <td style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
                     {t.isPositive ? `₹${t.grossAmount.toLocaleString('en-IN')}` : `- ₹${t.grossAmount.toLocaleString('en-IN')}`}
                   </td>
                   <td style={{ color: t.discount > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 600, fontSize: '13px' }}>
                     {t.discount > 0 ? `- ₹${t.discount.toLocaleString('en-IN')}` : '—'}
                   </td>
-                  <td style={{ fontWeight: 700, fontSize: '14px', color: t.isPositive ? 'var(--success)' : 'var(--danger)' }}>
-                    {t.isPositive ? '+ ' : '- '}₹{t.amount.toLocaleString('en-IN')}
+                  <td style={{
+                    fontWeight: 700,
+                    fontSize: '14px',
+                    color: t.isStoreCredit ? '#856404' : (t.isPositive ? 'var(--success)' : 'var(--danger)')
+                  }}>
+                    {t.isStoreCredit ? '💳 ' : (t.isPositive ? '+ ' : '- ')}₹{t.amount.toLocaleString('en-IN')}
                   </td>
                   <td className="no-print">
                     {t.bill && (
@@ -2135,6 +2310,7 @@ const Reports = () => {
                   <option value="Cash">💵 Cash</option>
                   <option value="UPI">📱 UPI / GPay / PhonePe</option>
                   <option value="Split">💳 Split (Cash + UPI)</option>
+                  <option value="Store Credit">🎟️ Store Credit (Full Voucher Settlement)</option>
                 </select>
 
                 {/* If Split is selected */}
@@ -2180,6 +2356,25 @@ const Reports = () => {
                     </div>
                   );
                 })()}
+
+                {/* Credit Note voucher applied */}
+                <div style={{ marginTop: '10px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                    🎟️ Store Credit Note Applied (₹) <span style={{ fontWeight: 400, color: '#64748b' }}>(Optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="form-control"
+                    style={{ width: '100%', marginBottom: 0, fontWeight: 600 }}
+                    value={editCreditAmount}
+                    onChange={(e) => setEditCreditAmount(e.target.value)}
+                    placeholder="Enter Store Credit voucher amount applied"
+                  />
+                  <div style={{ fontSize: '10px', color: '#64748b', marginTop: '3px' }}>
+                    Separates non-cash store credit vouchers from physical counter drawer cash.
+                  </div>
+                </div>
               </div>
 
               {/* STRICTLY LOCKED PRODUCT DETAILS */}
