@@ -1690,6 +1690,9 @@ const Exchanges = () => {
               Are you sure you want to permanently delete Bill #<strong style={{ color: 'var(--dark)' }}>{deleteBillItem.id.slice(0, 8).toUpperCase()}</strong> and all its associated items and returns?<br /><br />
               <strong style={{ color: '#DC2626', fontSize: '20px' }}>₹{Number(deleteBillItem.total_amount).toLocaleString('en-IN')}</strong><br />
               <span style={{ fontSize: '13px', color: '#6B7280', display: 'block', marginTop: '6px' }}>Customer: {deleteBillItem.customer_name || 'Walk-in'}</span>
+              <span style={{ fontSize: '12px', color: '#b45309', background: '#fef3c7', padding: '4px 8px', borderRadius: '4px', display: 'inline-block', marginTop: '10px' }}>
+                💳 Any Store Credit Note issued for this bill will be automatically deleted.
+              </span>
             </p>
 
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -1706,7 +1709,7 @@ const Exchanges = () => {
                 onClick={async () => {
                   try {
                     await db.deleteBill(deleteBillItem.id);
-                    toast.success('Bill deleted successfully');
+                    toast.success('Bill & associated credit notes deleted');
                     setDeleteBillItem(null);
                     loadBills();
                   } catch (err) {
@@ -1734,7 +1737,10 @@ const Exchanges = () => {
             <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px' }}>
               Are you sure you want to permanently delete this return record?<br /><br />
               <strong style={{ color: 'var(--dark)', fontSize: '16px' }}>Reason: {deleteReturnItem.return_reason}</strong><br />
-              <strong style={{ color: '#DC2626', fontSize: '18px' }}>Settlement: ₹{Math.abs(deleteReturnItem.net_amount || 0)}</strong>
+              <strong style={{ color: '#DC2626', fontSize: '18px' }}>Settlement: ₹{Math.abs(deleteReturnItem.net_amount || 0)}</strong><br />
+              <span style={{ fontSize: '12px', color: '#b45309', background: '#fef3c7', padding: '4px 8px', borderRadius: '4px', display: 'inline-block', marginTop: '10px' }}>
+                💳 Any Store Credit Note issued for this return will be automatically deleted.
+              </span>
             </p>
 
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>

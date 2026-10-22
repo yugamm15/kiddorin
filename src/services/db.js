@@ -745,11 +745,31 @@ class SupabaseDB {
 
   async deleteBill(bill_id) {
     if (!bill_id) return false;
-    // 1. First find and reverse any returns/exchanges linked to this bill
-    const { data: rets } = await supabase.from('returns_exchanges').select('id').eq('original_bill_id', bill_id);
+
+    // 0. Fetch bill details
+    const { data: bill } = await supabase.from('bills').select('*').eq('id', bill_id).maybeSingle();
+
+    // 1. Find and reverse any returns/exchanges linked to this bill, including credit notes
+    const { data: rets } = await supabase.from('returns_exchanges').select('*').eq('original_bill_id', bill_id);
     if (rets && rets.length > 0) {
+      // Calculate total credit note balance generated from returns on this bill
+      let totalCreditIssued = 0;
+      rets.forEach(r => {
+        if (Number(r.net_amount) < 0) {
+          totalCreditIssued += Math.abs(Number(r.net_amount));
+        }
+      });
+
+      // Reverse and deduct this credit note from customer_credits table
+      const custPhone = (bill?.customer_phone || rets[0]?.customer_phone || '').trim();
+      const branchId = bill?.branch_id || rets[0]?.branch_id;
+      if (totalCreditIssued > 0 && custPhone) {
+        await this.deductCustomerCredit(custPhone, branchId, totalCreditIssued);
+      }
+
+      // Reverse stock changes and delete all return records (skip individual credit deduction since handled in bulk above)
       for (const r of rets) {
-        await this.deleteReturn(r.id);
+        await this.deleteReturn(r.id, true);
       }
     }
 
@@ -774,9 +794,9 @@ class SupabaseDB {
     return true;
   }
 
-  async deleteReturn(return_id) {
+  async deleteReturn(return_id, skipCreditDeduction = false) {
     if (!return_id) return false;
-    // 1. Fetch return record to reverse stock changes
+    // 1. Fetch return record to reverse stock changes and credit note
     const { data: ret } = await supabase.from('returns_exchanges').select('*').eq('id', return_id).maybeSingle();
     if (ret) {
       // Reverse returned item stock (we added stock during return, so subtract it back)
@@ -791,6 +811,19 @@ class SupabaseDB {
         const { data: exProd } = await supabase.from('products').select('quantity').eq('id', ret.exchanged_product_id).maybeSingle();
         if (exProd) {
           await supabase.from('products').update({ quantity: Number(exProd.quantity) + Number(ret.exchanged_qty) }).eq('id', ret.exchanged_product_id);
+        }
+      }
+
+      // Reverse & delete Store Credit Note if this individual return generated one
+      if (!skipCreditDeduction && Number(ret.net_amount) < 0) {
+        const creditAmt = Math.abs(Number(ret.net_amount));
+        let custPhone = ret.customer_phone ? String(ret.customer_phone).trim() : '';
+        if (!custPhone && ret.original_bill_id) {
+          const { data: origBill } = await supabase.from('bills').select('customer_phone').eq('id', ret.original_bill_id).maybeSingle();
+          if (origBill?.customer_phone) custPhone = String(origBill.customer_phone).trim();
+        }
+        if (custPhone) {
+          await this.deductCustomerCredit(custPhone, ret.branch_id, creditAmt);
         }
       }
     }
@@ -874,24 +907,54 @@ class SupabaseDB {
 
   async deductCustomerCredit(phone, branch_id, amount) {
     if (!phone || amount <= 0) return;
-    const { data: existCredit } = await supabase
-      .from('customer_credits')
-      .select('*')
-      .eq('branch_id', branch_id)
-      .eq('customer_phone', phone)
-      .maybeSingle();
+    const cleanPhone = String(phone).replace(/\s+/g, '').trim();
+    const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    // Search by branch and exact phone first
+    let query = supabase.from('customer_credits').select('*');
+    if (branch_id && branch_id !== 'all') {
+      query = query.eq('branch_id', branch_id);
+    }
+    const { data: list } = await query;
+
+    let existCredit = null;
+    if (list && list.length > 0) {
+      existCredit = list.find(c => {
+        const p = String(c.customer_phone || '').replace(/\s+/g, '').trim();
+        return p === cleanPhone || (last10.length >= 7 && p.includes(last10));
+      });
+    }
+
+    // Fallback search across all customer_credits without branch filter if not found
+    if (!existCredit) {
+      const { data: allCredits } = await supabase.from('customer_credits').select('*');
+      if (allCredits && allCredits.length > 0) {
+        existCredit = allCredits.find(c => {
+          const p = String(c.customer_phone || '').replace(/\s+/g, '').trim();
+          return p === cleanPhone || (last10.length >= 7 && p.includes(last10));
+        });
+      }
+    }
 
     if (existCredit) {
-      const newBal = Math.max(0, Number(existCredit.balance) - amount);
-      await supabase
-        .from('customer_credits')
-        .update({ balance: newBal, updated_at: new Date().toISOString() })
-        .eq('id', existCredit.id);
+      const newBal = Math.max(0, Number(existCredit.balance || 0) - Number(amount));
+      if (newBal <= 0) {
+        // Balance reached zero: completely delete the credit note row
+        await supabase.from('customer_credits').delete().eq('id', existCredit.id);
+      } else {
+        await supabase
+          .from('customer_credits')
+          .update({ balance: newBal, updated_at: new Date().toISOString() })
+          .eq('id', existCredit.id);
+      }
 
-      const { data: br } = await supabase.from('branches').select('customer_credits_balance').eq('id', branch_id).maybeSingle();
-      if (br) {
-        const newBranchBal = Math.max(0, Number(br.customer_credits_balance || 0) - amount);
-        await supabase.from('branches').update({ customer_credits_balance: newBranchBal }).eq('id', branch_id);
+      const targetBranch = branch_id || existCredit.branch_id;
+      if (targetBranch) {
+        const { data: br } = await supabase.from('branches').select('customer_credits_balance').eq('id', targetBranch).maybeSingle();
+        if (br) {
+          const newBranchBal = Math.max(0, Number(br.customer_credits_balance || 0) - Number(amount));
+          await supabase.from('branches').update({ customer_credits_balance: newBranchBal }).eq('id', targetBranch);
+        }
       }
     }
   }
