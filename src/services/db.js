@@ -1052,6 +1052,9 @@ class SupabaseDB {
   async processMultipleExchange(payload) {
     const { branch_id, original_bill_id, customer_name, customer_phone, returns, exchanges, overall_net_amount, discount, payment_method } = payload;
 
+    const totalExchangedVal = (exchanges || []).reduce((s, e) => s + (Number(e.price || 0) * Number(e.qty || 1)), 0);
+    const totalDiscount = Number(discount || 0);
+
     // 1. Generate paired rows using our helper logic
     const pairedRows = [];
     let retIdx = 0;
@@ -1104,6 +1107,11 @@ class SupabaseDB {
       }
 
       const rowNetAmount = (exchanged_price * exchanged_qty) - (returned_price * returned_qty);
+      const rowExchVal = exchanged_price * exchanged_qty;
+      const rowDiscountShare = (totalExchangedVal > 0 && exchanged_product_id)
+        ? Math.round((rowExchVal / totalExchangedVal) * totalDiscount)
+        : 0;
+
       pairedRows.push({
         branch_id,
         original_bill_id,
@@ -1114,8 +1122,8 @@ class SupabaseDB {
         exchanged_product_id,
         exchanged_qty,
         net_amount: rowNetAmount,
-        return_reason: return_reason || 'Return',
-        discount: pairedRows.length === 0 ? (discount || 0) : 0,
+        return_reason: rowDiscountShare > 0 ? `${return_reason || 'Exchange'} [Disc: ₹${rowDiscountShare}]` : (return_reason || 'Return'),
+        discount: rowDiscountShare,
         payment_method: payment_method || (overall_net_amount < 0 ? 'Store Credit Note' : 'Even Exchange')
       });
     }

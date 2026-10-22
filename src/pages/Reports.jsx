@@ -865,12 +865,16 @@ const Reports = () => {
           ? directExchanged
           : (products.find(p => calcPrice > 0 && Number(p.selling_price || 0) === calcPrice) || directExchanged);
 
-        const exchValue = calcPrice * (ex.exchanged_qty || 1);
+        const exDisc = Number(ex.discount || ex.discount_amount || 0) || (() => {
+          const m = (ex.return_reason || '').match(/\[Disc:\s*₹?([\d.]+)\]/i);
+          return m ? parseFloat(m[1]) : 0;
+        })();
+        const exchValue = Math.max(0, (calcPrice * (ex.exchanged_qty || 1)) - exDisc);
         const designStr = effectiveExchangedProd.design_number ? `#${effectiveExchangedProd.design_number}` : '';
         const catStr = effectiveExchangedProd.category ? effectiveExchangedProd.category : (effectiveExchangedProd.name || 'Item');
         const sizeStr = effectiveExchangedProd.size ? `(${effectiveExchangedProd.size})` : '';
 
-        const fullName = `${catStr} ${sizeStr} ${designStr}`.trim();
+        const fullName = `${catStr} ${sizeStr} ${designStr}${exDisc > 0 ? ` (Disc: -₹${exDisc})` : ''}`.trim();
         entry.exchangedItems.push(`${fullName}`);
         entry.totalExchangedVal += exchValue;
       }

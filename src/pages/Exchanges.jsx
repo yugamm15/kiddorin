@@ -112,7 +112,10 @@ const Exchanges = () => {
         const pId = ret.exchanged_product_id;
         const exProd = ret.exchanged_product || {};
         const rawPrice = Number(exProd.selling_price || ret.exchanged_price || (ret.net_amount > 0 ? ret.net_amount : 0));
-        const exDisc = Number(ret.discount || 0);
+        const exDisc = Number(ret.discount || 0) || (() => {
+          const match = (ret.return_reason || '').match(/\[Disc:\s*₹?([\d.]+)\]/i) || (ret.payment_method || '').match(/Discount:\s*₹?([\d.]+)/i);
+          return match ? parseFloat(match[1]) : 0;
+        })();
         const exQty = Number(ret.exchanged_qty || 1);
         const discPerUnit = exDisc > 0 ? Math.round(exDisc / exQty) : 0;
         const effectiveExPrice = Math.max(0, rawPrice - discPerUnit);
@@ -394,20 +397,20 @@ const Exchanges = () => {
 
   let discountAmount = 0;
   let discountPercent = 0;
-  // Discount is ONLY applicable when customer takes replacement items AND owes extra payable balance (rawDiff > 0)
-  // When issuing a Store Credit Note (rawDiff <= 0), discount is strictly 0 and never cuts credit balance
-  if (rawDiff > 0 && exchangedItems.length > 0 && discountValue && !isNaN(discountValue) && parseFloat(discountValue) > 0) {
+  // Discount is applicable on replacement items whenever replacement items are chosen (exchangedItems.length > 0)
+  if (exchangedItems.length > 0 && totalExchangedValue > 0 && discountValue && !isNaN(discountValue) && parseFloat(discountValue) > 0) {
     const val = parseFloat(discountValue);
     if (discountType === 'percent') {
       discountPercent = Math.min(val, 100);
-      discountAmount = Math.round((rawDiff * discountPercent) / 100);
+      discountAmount = Math.round((totalExchangedValue * discountPercent) / 100);
     } else {
-      discountAmount = Math.min(val, rawDiff);
-      discountPercent = parseFloat(((discountAmount / rawDiff) * 100).toFixed(2));
+      discountAmount = Math.min(val, totalExchangedValue);
+      discountPercent = parseFloat(((discountAmount / totalExchangedValue) * 100).toFixed(2));
     }
   }
 
-  const netDiff = rawDiff > 0 ? (rawDiff - discountAmount) : rawDiff;
+  // Net difference = (Replacement Value - Discount) - Returned Value
+  const netDiff = (totalExchangedValue - discountAmount) - totalReturnedValue;
 
   const handleConfirmExchange = async () => {
     const returnKeys = Object.keys(selectedReturnItems);
@@ -440,7 +443,10 @@ const Exchanges = () => {
 
       const sCashAmt = parseFloat(splitCash) || 0;
       const sUpiAmt = Math.max(0, netDiff - sCashAmt);
-      const finalPayMethod = paymentMethod === 'Split' ? `Split (Cash: ₹${sCashAmt}, UPI: ₹${sUpiAmt})` : paymentMethod;
+      let finalPayMethod = paymentMethod === 'Split' ? `Split (Cash: ₹${sCashAmt}, UPI: ₹${sUpiAmt})` : paymentMethod;
+      if (discountAmount > 0) {
+        finalPayMethod = `${finalPayMethod} [Discount: ₹${discountAmount}]`;
+      }
 
       const payload = {
         branch_id: user.branch_id,
@@ -863,10 +869,17 @@ const Exchanges = () => {
                   <span>+₹{totalExchangedValue}</span>
                 </div>
 
-                {exchangedItems.length > 0 && rawDiff > 0 && (
+                {exchangedItems.length > 0 && (
                   <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)', marginBottom: '12px' }}>
-                      <span className="label" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>DISCOUNT (OPTIONAL)</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <span className="label" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>
+                          DISCOUNT ON REPLACEMENT ITEMS (OPTIONAL)
+                        </span>
+                        <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>
+                          Discount applies to replacement items (counted proportionally if returned again)
+                        </div>
+                      </div>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                           <input
@@ -890,14 +903,21 @@ const Exchanges = () => {
                             style={{ padding: '10px 10px 10px 22px', width: '110px', borderRadius: '4px', border: '1px solid var(--border)', textAlign: 'right', fontWeight: 'bold', fontSize: '14px', background: discountType === 'amount' && discountValue ? '#fff' : 'var(--off-white)' }}
                             placeholder="0"
                             min="0"
+                            max={totalExchangedValue}
                           />
                         </div>
                       </div>
                     </div>
                     {discountAmount > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0 12px', color: 'var(--success)', fontWeight: 600, fontSize: '13px' }}>
-                        <span>DISCOUNT APPLIED</span>
-                        <span>-₹{discountAmount.toLocaleString('en-IN')} ({discountPercent}%)</span>
+                      <div style={{ background: '#ecfdf5', padding: '10px 12px', borderRadius: '6px', border: '1px solid #a7f3d0', marginBottom: '12px', fontSize: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#065f46', fontWeight: 700 }}>
+                          <span>🎉 Discount Given:</span>
+                          <span>-₹{discountAmount.toLocaleString('en-IN')} ({discountPercent}%)</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#047857', marginTop: '4px' }}>
+                          <span>Net Replacement Value:</span>
+                          <strong>+₹{(totalExchangedValue - discountAmount).toLocaleString('en-IN')}</strong>
+                        </div>
                       </div>
                     )}
                   </>
