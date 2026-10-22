@@ -108,17 +108,36 @@ const Stock = () => {
         let skipCount = 0;
         const designsAddedInThisBatch = new Set();
 
-        for (const row of rows) {
-          // Normalize column keys (lowercase and trimmed)
-          const cleanRow = {};
-          Object.keys(row).forEach(k => {
-            cleanRow[k.trim().toLowerCase()] = row[k];
-          });
+        // Ensure active dealers list is loaded
+        let activeDealers = dealers;
+        if (!activeDealers || activeDealers.length === 0) {
+          activeDealers = (await db.getDealers()) || [];
+          setDealers(activeDealers);
+        }
 
-          const design_number = String(cleanRow['design number'] || cleanRow['design_number'] || cleanRow['design'] || '').trim();
-          const quantity = parseInt(cleanRow['quantity'] || cleanRow['qty']) || 1;
-          const purchase_price = parseFloat(cleanRow['purchase price'] || cleanRow['purchase_price'] || cleanRow['cost']) || 0;
-          const selling_price = parseFloat(cleanRow['selling price'] || cleanRow['selling_price'] || cleanRow['price']) || 0;
+        // Helper to extract cell value ignoring case, spaces, underscores, dashes, and special symbols
+        const getRowVal = (row, ...aliases) => {
+          const keys = Object.keys(row);
+          for (const alias of aliases) {
+            const aliasNorm = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
+            for (const key of keys) {
+              const keyNorm = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (keyNorm === aliasNorm) {
+                const val = row[key];
+                if (val !== undefined && val !== null && String(val).trim() !== '') {
+                  return String(val).trim();
+                }
+              }
+            }
+          }
+          return '';
+        };
+
+        for (const row of rows) {
+          const design_number = getRowVal(row, 'design_number', 'design number', 'design no', 'design', 'design#', 'item code', 'code');
+          const quantity = parseInt(getRowVal(row, 'quantity', 'qty', 'stock', 'pieces', 'pcs')) || 1;
+          const purchase_price = parseFloat(getRowVal(row, 'purchase_price', 'purchase price', 'cost', 'cost price', 'buying price', 'buy price', 'p price', 'purchase')) || 0;
+          const selling_price = parseFloat(getRowVal(row, 'selling_price', 'selling price', 'price', 'sale price', 's price', 'selling', 'mrp')) || 0;
 
           if (!design_number) continue;
 
@@ -135,23 +154,44 @@ const Stock = () => {
           // Dealer lookup
           let dealer_id = formData.dealer_id || null;
           let resolvedDealerName = null;
-          const dealerName = String(cleanRow['dealer name'] || cleanRow['dealer'] || '').trim();
+
+          const directDealerId = getRowVal(row, 'dealer_id', 'dealer id', 'dealerid');
+          if (directDealerId) {
+            const matchedById = activeDealers.find(d => String(d.id).toLowerCase() === directDealerId.toLowerCase());
+            if (matchedById) {
+              dealer_id = matchedById.id;
+              resolvedDealerName = matchedById.name;
+            }
+          }
+
+          const dealerName = getRowVal(row, 'dealer_name', 'dealer name', 'dealer', 'dealername', 'vendor', 'vendor_name', 'vendor name', 'supplier', 'supplier name', 'party', 'party name', 'brand');
           if (dealerName) {
-            const matchedDealer = dealers.find(d => d.name.toLowerCase() === dealerName.toLowerCase());
-            if (matchedDealer) {
-              dealer_id = matchedDealer.id;
-              resolvedDealerName = matchedDealer.name;
+            const cleanTarget = dealerName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            let matched = activeDealers.find(d => (d.name || '').trim().toLowerCase() === dealerName.toLowerCase());
+            if (!matched) {
+              matched = activeDealers.find(d => (d.name || '').toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget);
+            }
+            if (!matched && cleanTarget.length >= 3) {
+              matched = activeDealers.find(d => {
+                const dClean = (d.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                return dClean.includes(cleanTarget) || cleanTarget.includes(dClean);
+              });
+            }
+
+            if (matched) {
+              dealer_id = matched.id;
+              resolvedDealerName = matched.name;
             } else {
               resolvedDealerName = dealerName;
             }
-          } else if (dealer_id) {
-            const matched = dealers.find(d => d.id === dealer_id);
+          } else if (dealer_id && !resolvedDealerName) {
+            const matched = activeDealers.find(d => d.id === dealer_id);
             if (matched) resolvedDealerName = matched.name;
           }
 
           // Date lookup (default to today if empty)
           let dateStr = new Date().toISOString().split('T')[0];
-          const rawDate = cleanRow['date'];
+          const rawDate = row['date'] || row['Date'] || row['DATE'] || getRowVal(row, 'date', 'purchasedate', 'billdate');
           if (rawDate) {
             if (typeof rawDate === 'number') {
               // Excel date serial number
@@ -166,11 +206,11 @@ const Stock = () => {
 
           try {
             await db.addStock({
-              category: String(cleanRow['category'] || 'General').trim(),
-              gender: String(cleanRow['gender'] || 'Unisex').trim(),
+              category: getRowVal(row, 'category', 'cat', 'item category') || 'General',
+              gender: getRowVal(row, 'gender', 'sex') || 'Unisex',
               design_number,
-              color: String(cleanRow['color'] || 'MULTI').trim(),
-              size: String(cleanRow['size'] || 'FREE').trim(),
+              color: getRowVal(row, 'color', 'colour') || 'MULTI',
+              size: getRowVal(row, 'size') || 'FREE',
               quantity,
               purchase_price,
               selling_price,

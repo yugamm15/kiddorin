@@ -114,12 +114,104 @@ class SupabaseDB {
 
     let product_id;
 
-    // Resolve dealer name if dealer_id is provided
-    let resolvedDealerName = productData.dealer_name || null;
-    const targetDealerId = productData.dealer_id || existing?.dealer_id || null;
+    // Resolve dealer id and dealer name with robust lookup and fallback
+    let targetDealerId = productData.dealer_id || existing?.dealer_id || null;
+    let resolvedDealerName = (productData.dealer_name || existing?.dealer_name || '').trim() || null;
+
+    // Fetch all dealers to resolve IDs / names accurately
+    const { data: allDealers } = await supabase.from('dealers').select('id, name');
+    const dealersList = allDealers || [];
+
+    // Case 1: dealer_name is provided, but targetDealerId is missing
+    if (resolvedDealerName && !targetDealerId) {
+      const cleanTarget = resolvedDealerName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      let matched = dealersList.find(d => (d.name || '').trim().toLowerCase() === resolvedDealerName.toLowerCase());
+      if (!matched) {
+        matched = dealersList.find(d => (d.name || '').toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget);
+      }
+      if (!matched && cleanTarget.length >= 3) {
+        matched = dealersList.find(d => {
+          const dClean = (d.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          return dClean.includes(cleanTarget) || cleanTarget.includes(dClean);
+        });
+      }
+
+      if (matched) {
+        targetDealerId = matched.id;
+        resolvedDealerName = matched.name;
+      } else {
+        // Auto-create new dealer in dealers table so it is properly registered with a real dealer_id
+        try {
+          const { data: newDealer, error: newErr } = await supabase
+            .from('dealers')
+            .insert([{ name: resolvedDealerName, phone: '0000000000' }])
+            .select()
+            .single();
+          if (!newErr && newDealer) {
+            targetDealerId = newDealer.id;
+            resolvedDealerName = newDealer.name;
+            dealersList.push(newDealer);
+          }
+        } catch (e) {
+          console.warn('Could not auto-create dealer in dealers table:', e);
+        }
+      }
+    }
+
+    // Case 2: targetDealerId is provided, but resolvedDealerName is missing
     if (targetDealerId && !resolvedDealerName) {
-      const { data: d } = await supabase.from('dealers').select('name').eq('id', targetDealerId).maybeSingle();
-      if (d?.name) resolvedDealerName = d.name;
+      const matched = dealersList.find(d => d.id === targetDealerId);
+      if (matched) {
+        resolvedDealerName = matched.name;
+      } else {
+        const { data: d } = await supabase.from('dealers').select('name').eq('id', targetDealerId).maybeSingle();
+        if (d?.name) resolvedDealerName = d.name;
+      }
+    }
+
+    // Case 3: Both targetDealerId and resolvedDealerName are still missing -> Infer from design number prefix
+    if (!targetDealerId || !resolvedDealerName) {
+      const des = (productData.design_number || '').trim().toUpperCase();
+      let matchedDealerName = null;
+      if (des.startsWith('HD-') || des.startsWith('HD') || des.startsWith('H-D')) matchedDealerName = 'HEY DEYAN';
+      else if (des.startsWith('BEI') || des.startsWith('B-')) matchedDealerName = 'Beiya';
+      else if (des.startsWith('M-') || des.startsWith('MIYO')) matchedDealerName = 'Miyo';
+      else if (des.startsWith('DW-') || des.startsWith('DW') || des.startsWith('DONG')) matchedDealerName = 'Dongfang';
+      else if (des.startsWith('XS-') || des.startsWith('XS') || des.startsWith('XIN')) matchedDealerName = 'Xintong';
+      else if (des.startsWith('GS-') || des.startsWith('GS') || des.startsWith('GUHO')) matchedDealerName = 'GUHO SHAHE';
+      else if (des.startsWith('HC-') || des.startsWith('HC') || des.startsWith('HUCAI')) matchedDealerName = 'HUCAI';
+      else if (des.startsWith('SM-') || des.startsWith('SM') || des.startsWith('STAR')) matchedDealerName = 'STAR MERRY';
+      else if (des.startsWith('PNG-') || des.startsWith('PNG')) matchedDealerName = 'PNG';
+      else if (des.startsWith('LCT-') || des.startsWith('LCT')) matchedDealerName = 'LCT';
+      else if (des.startsWith('SY-') || des.startsWith('SY') || des.startsWith('SHAUKNG')) matchedDealerName = 'SHAUKNG YAN YANG';
+      else if (des.startsWith('BK-') || des.startsWith('BK') || des.startsWith('BABY')) matchedDealerName = 'BABY K';
+      else if (des.startsWith('TK-') || des.startsWith('TK') || des.startsWith('TWO')) matchedDealerName = 'Two Kids';
+      else if (des.startsWith('VK-') || des.startsWith('VK')) matchedDealerName = 'VK';
+      else if (des.startsWith('JT-') || des.startsWith('JT') || des.startsWith('JTHUI')) matchedDealerName = 'Jthui - Shijing';
+      else if (des.startsWith('MK-') || des.startsWith('MK')) matchedDealerName = 'MK Kids - Shijing';
+      else if (des.startsWith('JM-') || des.startsWith('JM') || des.startsWith('JIAMI')) matchedDealerName = 'Jiami - Shijing';
+      else if (des.startsWith('CS-') || des.startsWith('CS') || des.startsWith('CHANG')) matchedDealerName = 'Changsheng';
+      else if (des.startsWith('GL-') || des.startsWith('GL') || des.startsWith('GOOD')) matchedDealerName = 'Good Luck';
+      else if (des.startsWith('TB-') || des.startsWith('TB') || des.startsWith('TAO')) matchedDealerName = 'Tao Bao';
+      else if (des.startsWith('SNM-') || des.startsWith('SNM') || des.startsWith('SHAO')) matchedDealerName = 'Shao Nian Meng';
+      else if (des.startsWith('FDD-') || des.startsWith('FDD') || des.startsWith('FUN')) matchedDealerName = 'FUN DUO DUO';
+      else if (des.startsWith('YDY-') || des.startsWith('YDY') || des.startsWith('YI DO')) matchedDealerName = 'YI DO YING';
+      else if (des.startsWith('MIER-') || des.startsWith('MIER')) matchedDealerName = 'MIER';
+      else if (des.startsWith('MINI-') || des.startsWith('MISS')) matchedDealerName = 'Miss Mini';
+      else if (des.startsWith('LILA-') || des.startsWith('LILA')) matchedDealerName = 'LILA kids';
+      else if (des.startsWith('BELE-') || des.startsWith('BELE')) matchedDealerName = 'Bele Boutique';
+      else if (des.startsWith('DADIDA-') || des.startsWith('DADIDA')) matchedDealerName = 'Dadida - Shijing';
+      else if (des.startsWith('J-') || des.startsWith('J')) matchedDealerName = 'J';
+
+      if (matchedDealerName) {
+        resolvedDealerName = matchedDealerName;
+        const matched = dealersList.find(d => (d.name || '').trim().toLowerCase() === matchedDealerName.toLowerCase());
+        if (matched) targetDealerId = matched.id;
+      }
+    }
+
+    if (!resolvedDealerName) {
+      resolvedDealerName = 'Direct';
     }
 
     if (existing) {
