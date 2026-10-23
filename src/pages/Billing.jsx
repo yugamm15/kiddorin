@@ -131,6 +131,7 @@ const Billing = () => {
         }
       }
       const sCashAmt = paymentMethod === 'split' ? (parseFloat(splitCash) || 0) : (paymentMethod === 'cash' ? finalAmount : 0);
+      const sUpiAmt = paymentMethod === 'split' ? Math.max(0, finalAmount - sCashAmt) : (paymentMethod === 'upi' ? finalAmount : 0);
       const basePay = paymentMethod === 'cash' ? 'Cash' : (paymentMethod === 'upi' ? 'UPI' : `Split (Cash: ₹${sCashAmt}, UPI: ₹${sUpiAmt})`);
       const payStr = finalAmount === 0
         ? `Store Credit (₹${creditApplied})`
